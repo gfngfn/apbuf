@@ -1,0 +1,17 @@
+bib := {
+  title: string,
+  author: string,
+  type: (
+    | Article: article
+    | InProceedings: {
+        conference: string,
+      }
+    | Other
+    ),
+}
+
+article := {
+  book_title: string,
+  volume: int,
+  number: int,
+}
