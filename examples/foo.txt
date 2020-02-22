@@ -1,14 +1,15 @@
-bib_type :=
+bib_type($s) :=
   | Article: article
   | InProceedings: {
       conference: string,
     }
-  | Other
+  | NoBib
+  | Special: $s
 
 bib($x) := {
   title: string,
   author: list($x),
-  bib_type: bib_type,
+  bib_type: bib_type(bool),
 }
 
 article := {
