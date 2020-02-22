@@ -14,6 +14,12 @@
 ## Syntax of configuration files
 
 ```
+toplevel ::=
+  | meta decls
+
+meta ::=
+  | '@output' s ':' s
+
 // declarations
 decls ::=
   | ident ':=' msg decls

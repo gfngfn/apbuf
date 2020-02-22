@@ -100,6 +100,9 @@ type error =
     }
 [@@deriving show { with_path = false; }]
 
+type meta_spec =
+  | MetaOutput of string * string
+
 module ResultMonad : sig
   val ( >>= ) : ('a, error) result -> ('a -> ('b, error) result) -> ('b, error) result
   val error : error -> ('a, error) result

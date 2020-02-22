@@ -1,3 +1,5 @@
+@output "elm": "./gen"
+
 bib_type($s) :=
   | Article: article
   | InProceedings: {

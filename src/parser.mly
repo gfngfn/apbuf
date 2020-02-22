@@ -4,19 +4,24 @@
 
 %token EOI
 %token DEFEQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
+%token META_OUTPUT
 %token<Types.variable> VARIABLE
 %token<Types.identifier> IDENTIFIER
 %token<Types.constructor> CONSTRUCTOR
+%token<string> STRING
 
 %start toplevel
-%type<Types.parsed_declarations> toplevel
+%type<Types.meta_spec * Types.parsed_declarations> toplevel
 %type<Types.variable list> params
 %type<Types.parsed_message list> argssub
 
 %%
 
 toplevel:
-| decls=list(msgdecl); EOI { decls }
+| meta=meta; decls=list(msgdecl); EOI { (meta, decls) }
+;
+meta:
+| META_OUTPUT; s=STRING; COLON; path=STRING { MetaOutput(s, path) }
 ;
 msgdecl:
 | name=msgname; params=params; DEFEQ; msg=msg {

@@ -297,7 +297,7 @@ end = struct
             Format.sprintf "%s : %s" key (stringify_type ty)
           ) |> String.concat ", "
         in
-        Format.sprintf "{%s}" sr
+        Format.sprintf "{ %s }" sr
 
 
 
@@ -510,7 +510,7 @@ let make_function_type params ty =
   ) params (Output.decoder_type ty)
 
 
-let generate_decoder (decls : declarations) =
+let generate_decoder (module_name : string) (decls : declarations) =
   let odecls =
     DeclMap.fold (fun name def acc ->
       let ovar = Output.global name in
@@ -560,6 +560,13 @@ let generate_decoder (decls : declarations) =
 
     ) decls Alist.empty |> Alist.to_list
   in
-  odecls |> List.map (fun odecl ->
-    Output.stringify_declaration odecl ^ "\n\n"
-  ) |> String.concat ""
+  let sdecls =
+    odecls |> List.map (fun odecl ->
+      Output.stringify_declaration odecl ^ "\n\n"
+    )
+  in
+  List.append [
+    Format.sprintf "module %s exposing (..)\n" module_name;
+    "import Json.Decode exposing (Decoder)\n";
+    "\n";
+  ] sdecls |> String.concat ""
