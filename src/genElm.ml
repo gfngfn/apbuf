@@ -35,8 +35,12 @@ let make_global_val_name name =
   OVar("decode_" ^ name)
 
 
-let make_local_val_name x =
-  OVar("local_" ^ x)
+let make_local_val_for_key x =
+  OVar("local_key_" ^ x)
+
+
+let make_local_val_for_parameter x =
+  OVar("local_param_" ^ x)
 
 
 let field_access (key : key) (otree : output_tree) : output_tree =
@@ -54,7 +58,7 @@ let and_then (otree_cont : output_tree) (otree : output_tree) : output_tree =
 
 
 let decoder_of_variable (x : variable) : output_tree =
-  OIdentifier(make_local_val_name x)
+  OIdentifier(make_local_val_for_parameter x)
 
 
 let rec decoder_of_name (name : identifier) (args : message list) : output_tree =
@@ -68,7 +72,7 @@ let rec decoder_of_name (name : identifier) (args : message list) : output_tree 
 and decoder_of_record (rcd : message RecordMap.t) : output_tree =
   let otree_ans =
     ORecord(rcd |> RecordMap.mapi (fun key _ ->
-      OIdentifier(make_local_val_name key)
+      OIdentifier(make_local_val_for_key key)
     ))
   in
   let acc =
@@ -79,7 +83,7 @@ and decoder_of_record (rcd : message RecordMap.t) : output_tree =
     ) rcd Alist.empty
   in
   List.fold_right (fun (key, otree_accessk) otree_acc ->
-    and_then (OAbstract{ variable = make_local_val_name key; body = otree_acc; }) otree_accessk
+    and_then (OAbstract{ variable = make_local_val_for_key key; body = otree_acc; }) otree_accessk
   ) (acc |> Alist.to_list) otree_ans
 
 
@@ -102,6 +106,41 @@ and generate_message_decoder (msg : message) =
   | Variant(variant) -> decoder_of_variant variant
 
 
+let rec stringify_tree (otree : output_tree) : string =
+  match otree with
+  | OIdentifier(OVar(s)) ->
+      s
+
+  | OApplication{ applied = OVar(s); arguments = args; } ->
+      begin
+        match args with
+        | [] ->
+            s
+
+        | _ :: _ ->
+            let sargs = args |> List.map stringify_tree in
+            Format.sprintf "(%s %s)" s (String.concat " " sargs)
+      end
+
+  | OAbstract{ variable = OVar(s); body = body; } ->
+      Format.sprintf "(\\%s -> %s)" s (stringify_tree body)
+
+  | OStringLiteral(s) ->
+      Format.sprintf "\"%s\"" s
+
+  | ORecord(orcd) ->
+      let ss =
+        RecordMap.fold (fun key otree acc ->
+          let s = Format.sprintf "%s = %s" key (stringify_tree otree) in
+          Alist.extend acc s
+        ) orcd Alist.empty |> Alist.to_list
+      in
+      Format.sprintf "{%s}" (String.concat ", " ss)
+
+  | OBranching(_obr) ->
+      "(branching)" (* TODO *)
+
+
 let generate_decoder (decls : declarations) =
   let acc =
     DeclMap.fold (fun name def acc ->
@@ -114,7 +153,7 @@ let generate_decoder (decls : declarations) =
           let odecl =
             ODefVal{
               val_name   = make_global_val_name name;
-              parameters = def.def_params |> List.map make_local_val_name;
+              parameters = def.def_params |> List.map make_local_val_for_parameter;
               body       = otree;
             }
           in
@@ -122,4 +161,14 @@ let generate_decoder (decls : declarations) =
 
     ) decls Alist.empty
   in
-  acc |> Alist.to_list
+  acc |> Alist.to_list |> List.map (function
+  | ODefVal{
+      val_name   = OVar(s);
+      parameters = oparams;
+      body       = otree;
+    } ->
+      Format.sprintf "%s %s = %s"
+        s
+        (String.concat " " (oparams |> List.map (fun (OVar(s)) -> s)))
+        (stringify_tree otree)
+  ) |> String.concat "\n"
