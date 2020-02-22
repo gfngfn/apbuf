@@ -18,20 +18,20 @@ let main s =
   in
   match res with
   | Ok(decls) ->
-      let pp_args ppf args =
+      let pp_params ppf params =
         let s =
-          match args with
+          match params with
           | []     -> ""
-          | _ :: _ -> "(" ^ (args |> String.concat ", ") ^ ")"
+          | _ :: _ -> "(" ^ (params |> String.concat ", ") ^ ")"
         in
         Format.fprintf ppf "%s" s
       in
       Format.printf "@[";
       decls |> DeclMap.iter (fun name def ->
-        let args = def.def_args in
+        let params = def.def_params in
         match def.def_main with
-        | BuiltIn(_) -> Format.printf "%s%a (built-in),@ " name pp_args args
-        | Given(msg) -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_args args pp_message msg
+        | BuiltIn(_) -> Format.printf "%s%a (built-in),@ " name pp_params params
+        | Given(msg) -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_params params pp_message msg
       );
       Format.printf "@]"
 

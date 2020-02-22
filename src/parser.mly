@@ -10,7 +10,7 @@
 
 %start toplevel
 %type<Types.parsed_declarations> toplevel
-%type<Types.variable list> args
+%type<Types.variable list> params
 
 %%
 
@@ -18,19 +18,19 @@ toplevel:
 | decls=list(msgdecl); EOI { decls }
 ;
 msgdecl:
-| name=msgname; args=args; DEFEQ; msg=msg { (name, { pdef_args = args; pdef_main = PGiven(msg); }) }
+| name=msgname; params=params; DEFEQ; msg=msg { (name, { pdef_params = params; pdef_main = PGiven(msg); }) }
 ;
 msgname:
 | name=IDENTIFIER { name }
 ;
-args:
-|                                  { [] }
-| LPAREN; x=VARIABLE; tail=argssub { x :: tail }
+params:
+|                                    { [] }
+| LPAREN; x=VARIABLE; tail=paramssub { x :: tail }
 ;
-argssub:
-| RPAREN                          { [] }
-| COMMA; RPAREN                   { [] }
-| COMMA; x=VARIABLE; tail=argssub { x :: tail }
+paramssub:
+| RPAREN                            { [] }
+| COMMA; RPAREN                     { [] }
+| COMMA; x=VARIABLE; tail=paramssub { x :: tail }
 ;
 key:
 | key=IDENTIFIER { key }

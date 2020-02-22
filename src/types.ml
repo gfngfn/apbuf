@@ -21,15 +21,15 @@ type parsed_message =
 type built_in_info = unit
   (* TODO *)
 
-type argument = string
+type parameter = string
 
 type parsed_definition_main =
   | PBuiltIn of built_in_info
   | PGiven   of parsed_message
 
 type parsed_definition = {
-  pdef_args : argument list;
-  pdef_main : parsed_definition_main;
+  pdef_params : parameter list;
+  pdef_main   : parsed_definition_main;
 }
 
 type parsed_declarations = (identifier * parsed_definition) list
@@ -70,8 +70,8 @@ type definition_main =
   | Given   of message
 
 type definition = {
-  def_args : argument list;
-  def_main : definition_main;
+  def_params : parameter list;
+  def_main   : definition_main;
 }
 
 type declarations = definition DeclMap.t
@@ -156,7 +156,7 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
             normalize_message pmsg >>= fun msg ->
             return (Given(msg))
       end >>= fun defmain ->
-      let def = { def_args = pdef.pdef_args; def_main = defmain } in
+      let def = { def_params = pdef.pdef_params; def_main = defmain } in
       return (declmap |> DeclMap.add name def)
   ) (return DeclMap.empty)
 
@@ -201,15 +201,17 @@ let validate_declarations (decls : declarations) : (unit, error) result =
     res >>= fun () ->
     match def.def_main with
     | BuiltIn(_) -> return ()
-    | Given(msg) -> validate_message is_defined_identifier (fun v -> def.def_args |> List.mem v) msg
+    | Given(msg) -> validate_message is_defined_identifier (fun v -> def.def_params |> List.mem v) msg
   ) decls (return ())
 
 
 let built_in_declarations : parsed_declarations =
-  let ( ==> ) (x : identifier) ((args, info) : argument list * built_in_info) =
-    (x, { pdef_args = args; pdef_main = PBuiltIn(info); })
+  let ( ==> ) (x : identifier) ((params, info) : parameter list * built_in_info) =
+    (x, { pdef_params = params; pdef_main = PBuiltIn(info); })
   in
   [
     "int"    ==> ([], ());
     "string" ==> ([], ());
+    "option" ==> (["v"], ());
+    "list"   ==> (["v"], ());
   ]
