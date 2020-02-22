@@ -37,22 +37,22 @@ type parsed_declarations = (identifier * parsed_definition) list
 module RecordMap = Map.Make(String)
 
 let pp_record_map pp ppf rcdmap =
-  Format.fprintf ppf "Record{@[@ ";
+  Format.fprintf ppf "@[<hov2>*R{@ ";
   rcdmap |> RecordMap.iter (fun k v ->
-    Format.fprintf ppf "%s@ ->@ @[%a@],@ " k pp v
+    Format.fprintf ppf "%s ->@ @[<hov2>%a@],@ " k pp v
   );
-  Format.fprintf ppf "@ @]}"
+  Format.fprintf ppf "@]}"
 
 module VariantMap = Map.Make(String)
 
 let pp_variant_map pp ppf variantmap =
-  Format.fprintf ppf "Variant(@[@ ";
+  Format.fprintf ppf "@[<hov2>*V(@ ";
   variantmap |> VariantMap.iter (fun k vopt ->
     match vopt with
     | None    -> Format.fprintf ppf "%s,@ " k
     | Some(v) -> Format.fprintf ppf "%s@ ->@ @[%a@],@ " k pp v
   );
-  Format.fprintf ppf "@ @])"
+  Format.fprintf ppf "@])"
 
 type message =
   | Variable of variable

@@ -3,6 +3,7 @@ open Types
 
 type output_variable =
   | OVar of string
+[@@deriving show { with_path = false; }]
 
 type output_tree =
   | OIdentifier of output_variable
@@ -16,15 +17,18 @@ type output_tree =
     }
   | OStringLiteral of string
   | ORecord of output_tree RecordMap.t
+      [@printer (pp_record_map pp_output_tree)]
   | OBranching of (output_tree option) VariantMap.t
+      [@printer (pp_variant_map pp_output_tree)]
+[@@deriving show { with_path = false; }]
 
 type output_declaration =
-  | ODefType
   | ODefVal of {
       val_name   : output_variable;
       parameters : output_variable list;
       body       : output_tree;
     }
+[@@deriving show { with_path = false; }]
 
 
 let make_global_val_name name =
@@ -99,20 +103,23 @@ and generate_message_decoder (msg : message) =
 
 
 let generate_decoder (decls : declarations) =
-  DeclMap.fold (fun name def acc ->
-    match def.def_main with
-    | BuiltIn(_) ->
-        acc
+  let acc =
+    DeclMap.fold (fun name def acc ->
+      match def.def_main with
+      | BuiltIn(_) ->
+          acc
 
-    | Given(msg) ->
-        let otree = generate_message_decoder msg in
-        let odecl =
-          ODefVal{
-            val_name   = make_global_val_name name;
-            parameters = def.def_params |> List.map make_local_val_name;
-            body       = otree;
-          }
-        in
-        Alist.extend acc odecl
+      | Given(msg) ->
+          let otree = generate_message_decoder msg in
+          let odecl =
+            ODefVal{
+              val_name   = make_global_val_name name;
+              parameters = def.def_params |> List.map make_local_val_name;
+              body       = otree;
+            }
+          in
+          Alist.extend acc odecl
 
-  ) decls Alist.empty
+    ) decls Alist.empty
+  in
+  acc |> Alist.to_list

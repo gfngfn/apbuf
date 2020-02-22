@@ -33,7 +33,9 @@ let main s =
         | BuiltIn(_) -> Format.printf "%s%a (built-in),@ " name pp_params params
         | Given(msg) -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_params params pp_message msg
       );
-      Format.printf "@]"
+      Format.printf "@]@,";
+      let odecls = GenElm.generate_decoder decls in
+      Format.printf "OUTPUT:@ @[%a@]" (Format.pp_print_list GenElm.pp_output_declaration) odecls
 
   | Error(e) ->
       Format.printf "! Error:@ %a" pp_error e
