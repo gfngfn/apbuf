@@ -132,7 +132,16 @@ end = struct
     Var("local_param_" ^ x)
 
   let type_identifier name =
-    TypeIdentifier("T_" ^ name)
+    let s =
+      match name with
+      | "bool"   -> "Bool"
+      | "int"    -> "Int"
+      | "string" -> "String"
+      | "list"   -> "List"
+      | "option" -> "Maybe"
+      | _        -> "T_" ^ name
+    in
+    TypeIdentifier(s)
 
   let type_parameter x =
     TypeParameter(x)
@@ -163,7 +172,7 @@ end = struct
 
   let access_argument (otree : tree) =
     Application{
-      applied = Var("Json.Decoder.field");
+      applied = Var("Json.Decode.field");
       arguments = [ StringLiteral(argument_key); otree; ]
     }
 
@@ -312,10 +321,9 @@ end = struct
         parameters = otyparams;
         body       = ty;
       } ->
-        Format.sprintf "type alias %s%s = %s%s"
+        Format.sprintf "type alias %s%s = %s"
           s
           (String.concat "" (otyparams |> List.map (fun (TypeParameter(a)) -> " " ^ a)))
-          (String.concat "" (otyparams |> List.map (fun (TypeParameter(a)) -> "Decoder " ^ a ^ " -> ")))
           (stringify_type ty)
 
     | DefDataType{
@@ -345,13 +353,12 @@ end = struct
   let built_in (builtin : built_in) : declaration =
     let dec = decoder_type in
     let ( !$ ) tp = TypeVariable(tp) in
-    let ( !- ) s = TypeIdentifier(s) in
-    let base s = (TypeName(!- s, [])) in
+    let base s = (TypeName(type_identifier s, [])) in
     match builtin with
     | BBool ->
         DefVal{
           val_name   = global "bool";
-          typ        = dec (base "Bool");
+          typ        = dec (base "bool");
           parameters = [];
           body       = Identifier(Var("Json.Decode.bool"));
         }
@@ -359,7 +366,7 @@ end = struct
     | BInt ->
         DefVal{
           val_name   = global "int";
-          typ        = dec (base "Int");
+          typ        = dec (base "int");
           parameters = [];
           body       = Identifier(Var("Json.Decode.int"));
         }
@@ -367,7 +374,7 @@ end = struct
     | BString ->
         DefVal{
           val_name   = global "string";
-          typ        = dec (base "String");
+          typ        = dec (base "string");
           parameters = [];
           body       = Identifier(Var("Json.Decode.string"));
         }
@@ -376,7 +383,7 @@ end = struct
         let typaram = type_parameter s in
         DefVal{
           val_name   = global "list";
-          typ        = FuncType(dec (!$ typaram), dec (TypeName(!- "List", [!$ typaram])));
+          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier "list", [!$ typaram])));
           parameters = [];
           body       = Identifier(Var("Json.Decode.list"));
         }
@@ -391,7 +398,7 @@ end = struct
         let typaram = type_parameter s in
         DefVal{
           val_name   = global "option";
-          typ        = FuncType(dec (!$ typaram), dec (TypeName(!- "Maybe", [!$ typaram])));
+          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier "option", [!$ typaram])));
           parameters = [ovar];
           body       = branching omap;
         }
@@ -441,7 +448,7 @@ and decoder_of_record (rcd : message RecordMap.t) : Output.tree =
         Output.identifier (Output.local_for_key key)
       )
     in
-    Output.record orcd
+    Output.succeed (Output.record orcd)
   in
   let acc =
     RecordMap.fold (fun key vmsg acc ->
