@@ -8,7 +8,7 @@ bib_type :=
 bib($x) := {
   title: string,
   author: list($x),
-  type: bib_type,
+  bib_type: bib_type,
 }
 
 article := {

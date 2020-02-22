@@ -174,7 +174,7 @@ end = struct
         s
 
 
-  let rec stringify_tree (otree : tree) : string =
+  let rec stringify_tree (indent : int) (otree : tree) : string =
     match otree with
     | Identifier(Var(s)) ->
         s
@@ -186,12 +186,12 @@ end = struct
               s
 
           | _ :: _ ->
-              let sargs = args |> List.map stringify_tree in
+              let sargs = args |> List.map (stringify_tree (indent + 1)) in
               Format.sprintf "(%s %s)" s (String.concat " " sargs)
         end
 
     | Abstract{ variable = Var(s); body = body; } ->
-        Format.sprintf "(\\%s -> %s)" s (stringify_tree body)
+        Format.sprintf "(\\%s -> %s)" s (stringify_tree (indent + 1) body)
 
     | StringLiteral(s) ->
         Format.sprintf "\"%s\"" s
@@ -202,19 +202,20 @@ end = struct
     | Record(orcd) ->
         let ss =
           RecordMap.fold (fun key otree acc ->
-            let s = Format.sprintf "%s = %s" key (stringify_tree otree) in
+            let s = Format.sprintf "%s = %s" key (stringify_tree (indent + 1) otree) in
             Alist.extend acc s
           ) orcd Alist.empty |> Alist.to_list
         in
         Format.sprintf "{ %s }" (String.concat ", " ss)
 
     | Case{ subject = otree_subject; branches = branches } ->
+        let sindent = "\n" ^ String.make ((indent + 1) * 2) ' ' in
         let ss =
           branches |> List.map (fun (pat, otree) ->
-            Format.sprintf "%s -> %s" (stringify_pattern pat) (stringify_tree otree)
+            Format.sprintf "%s%s -> %s" sindent (stringify_pattern pat) (stringify_tree (indent + 2) otree)
           )
         in
-        Format.sprintf "(case %s of %s)" (stringify_tree otree_subject) (String.concat " | " ss)
+        Format.sprintf "(case %s of %s)" (stringify_tree (indent + 1) otree_subject) (String.concat "" ss)
 
 
   let stringify_declaration (odecl : declaration) : string =
@@ -224,10 +225,10 @@ end = struct
         parameters = oparams;
         body       = otree;
       } ->
-        Format.sprintf "%s %s = %s"
+        Format.sprintf "%s%s = %s"
           s
-          (String.concat " " (oparams |> List.map (fun (Var(s)) -> s)))
-          (stringify_tree otree)
+          (String.concat "" (oparams |> List.map (fun (Var(s)) -> " " ^ s)))
+          (stringify_tree 1 otree)
 
 end
 
