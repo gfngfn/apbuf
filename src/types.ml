@@ -82,6 +82,7 @@ type error =
   | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
   | UndefinedMessageName           of { name : identifier; }
   | UndefinedVariable              of { variable : variable; }
+  | VariableBoundMoreThanOnce      of { variable : variable; }
 [@@deriving show { with_path = false; }]
 
 module ResultMonad : sig
@@ -192,6 +193,20 @@ let rec validate_message (is_defined_identifier : identifier -> bool) (is_define
       ) variant (return ())
 
 
+module ParamSet = Set.Make(String)
+
+
+let validate_parameters (params : parameter list) : (ParamSet.t, error) result =
+  let open ResultMonad in
+  params |> List.fold_left (fun res x ->
+    res >>= fun set ->
+    if set |> ParamSet.mem x then
+      error (VariableBoundMoreThanOnce{ variable = x; })
+    else
+      return (set |> ParamSet.add x)
+  ) (return ParamSet.empty)
+
+
 let validate_declarations (decls : declarations) : (unit, error) result =
   let is_defined_identifier name =
     decls |> DeclMap.mem name
@@ -200,8 +215,12 @@ let validate_declarations (decls : declarations) : (unit, error) result =
   DeclMap.fold (fun _ def res ->
     res >>= fun () ->
     match def.def_main with
-    | BuiltIn(_) -> return ()
-    | Given(msg) -> validate_message is_defined_identifier (fun v -> def.def_params |> List.mem v) msg
+    | BuiltIn(_) ->
+        return ()
+
+    | Given(msg) ->
+        validate_parameters def.def_params >>= fun set ->
+        validate_message is_defined_identifier (fun v -> set |> ParamSet.mem v) msg
   ) decls (return ())
 
 
