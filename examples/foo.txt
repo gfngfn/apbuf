@@ -1,6 +1,6 @@
 bib($x) := {
   title: string,
-  author: $x,
+  author: list($x),
   type: (
     | Article: article
     | InProceedings: {

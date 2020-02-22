@@ -11,6 +11,7 @@
 %start toplevel
 %type<Types.parsed_declarations> toplevel
 %type<Types.variable list> params
+%type<Types.parsed_message list> argssub
 
 %%
 
@@ -37,9 +38,15 @@ key:
 ;
 msg:
 | x=VARIABLE                      { PVariable(x) }
-| name=msgname                    { PName(name) }
+| name=msgname                    { PName(name, []) }
+| name=msgname; LPAREN; msg=msg; tail=argssub { PName(name, msg :: tail) }
 | BRECORD; rcd=record; ERECORD    { PRecord(rcd) }
 | LPAREN; variant=variant; RPAREN { PVariant(variant) }
+;
+argssub:
+| RPAREN                       { [] }
+| COMMA; RPAREN                { [] }
+| COMMA; msg=msg; tail=argssub { msg :: tail }
 ;
 record:
 |                                             { [] }

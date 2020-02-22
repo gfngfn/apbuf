@@ -13,7 +13,7 @@ type constructor = string
 
 type parsed_message =
   | PVariable of variable
-  | PName    of identifier
+  | PName    of identifier * parsed_message list
   | PRecord  of (string * parsed_message) list
   | PVariant of (string * parsed_message option) list
 [@@deriving show { with_path = false; }]
@@ -56,7 +56,7 @@ let pp_variant_map pp ppf variantmap =
 
 type message =
   | Variable of variable
-  | Name    of identifier
+  | Name    of identifier * message list
   | Record  of message RecordMap.t
       [@printer (pp_record_map pp_message)]
   | Variant of (message option) VariantMap.t
@@ -83,6 +83,11 @@ type error =
   | UndefinedMessageName           of { name : identifier; }
   | UndefinedVariable              of { variable : variable; }
   | VariableBoundMoreThanOnce      of { variable : variable; }
+  | InvalidMessageNameApplication of {
+      name           : identifier;
+      expected_arity : int;
+      actual_arity   : int;
+    }
 [@@deriving show { with_path = false; }]
 
 module ResultMonad : sig
@@ -104,6 +109,23 @@ end = struct
 
 end
 
+module Alist : sig
+  type 'a t
+  val empty : 'a t
+  val extend : 'a t -> 'a -> 'a t
+  val to_list : 'a t -> 'a list
+end = struct
+
+  type 'a t = 'a list
+
+  let empty = []
+
+  let extend (acc : 'a t) (v : 'a) = v :: acc
+
+  let to_list = List.rev
+
+end
+
 
 let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   let open ResultMonad in
@@ -111,8 +133,13 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   | PVariable(x) ->
       return (Variable(x))
 
-  | PName(name) ->
-      return (Name(name))
+  | PName(name, pargs) ->
+      pargs |> List.fold_left (fun res argpmsg ->
+        res >>= fun acc ->
+        normalize_message argpmsg >>= fun argmsg ->
+        return (Alist.extend acc argmsg)
+      ) (return Alist.empty) >>= fun acc ->
+      return (Name(name, acc |> Alist.to_list))
 
   | PRecord(prcd) ->
       prcd |> List.fold_left (fun res (key, pmsgsub) ->
@@ -162,8 +189,8 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
   ) (return DeclMap.empty)
 
 
-let rec validate_message (is_defined_identifier : identifier -> bool) (is_defined_variable : variable -> bool) (msg : message) : (unit, error) result =
-  let iter = validate_message is_defined_identifier is_defined_variable in
+let rec validate_message (find_arity : identifier -> int option) (is_defined_variable : variable -> bool) (msg : message) : (unit, error) result =
+  let iter = validate_message find_arity is_defined_variable in
   let open ResultMonad in
   match msg with
   | Variable(x) ->
@@ -172,11 +199,26 @@ let rec validate_message (is_defined_identifier : identifier -> bool) (is_define
       else
         error (UndefinedVariable{ variable = x; })
 
-  | Name(name) ->
-      if is_defined_identifier name then
-        return ()
-      else
-        error (UndefinedMessageName{ name = name; })
+  | Name(name, args) ->
+      begin
+        match find_arity name with
+        | Some(n_expected) ->
+            let n_actual = List.length args in
+            if n_actual == n_expected then
+              args |> List.fold_left (fun res argmsg ->
+                res >>= fun () ->
+                iter argmsg
+              ) (return ())
+            else
+              error (InvalidMessageNameApplication{
+                name           = name;
+                expected_arity = n_expected;
+                actual_arity   = n_actual;
+              })
+
+        | None ->
+            error (UndefinedMessageName{ name = name; })
+      end
 
   | Record(rcd) ->
       RecordMap.fold (fun _key vmsg res ->
@@ -208,8 +250,10 @@ let validate_parameters (params : parameter list) : (ParamSet.t, error) result =
 
 
 let validate_declarations (decls : declarations) : (unit, error) result =
-  let is_defined_identifier name =
-    decls |> DeclMap.mem name
+  let find_arity name =
+    match decls |> DeclMap.find_opt name with
+    | None      -> None
+    | Some(def) -> Some(List.length def.def_params)
   in
   let open ResultMonad in
   DeclMap.fold (fun _ def res ->
@@ -220,7 +264,7 @@ let validate_declarations (decls : declarations) : (unit, error) result =
 
     | Given(msg) ->
         validate_parameters def.def_params >>= fun set ->
-        validate_message is_defined_identifier (fun v -> set |> ParamSet.mem v) msg
+        validate_message find_arity (fun v -> set |> ParamSet.mem v) msg
   ) decls (return ())
 
 
