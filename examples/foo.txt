@@ -14,5 +14,5 @@ bib($x) := {
 article := {
   book_title: string,
   volume: int,
-  number: int,
+  number: option(int),
 }

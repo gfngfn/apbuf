@@ -20,13 +20,17 @@ type parsed_message =
 type parsed_variant = (constructor * parsed_message option) list
 [@@deriving show { with_path = false; }]
 
-type built_in_info = unit
-  (* TODO *)
+type built_in =
+  | BBool
+  | BInt
+  | BString
+  | BList   of variable
+  | BOption of variable
 
 type parameter = string
 
 type parsed_definition_main =
-  | PBuiltIn      of built_in_info
+  | PBuiltIn      of built_in
   | PGivenNormal  of parsed_message
   | PGivenVariant of parsed_variant
 
@@ -71,7 +75,7 @@ type variant = (message option) VariantMap.t
 module DeclMap = Map.Make(String)
 
 type definition_main =
-  | BuiltIn      of built_in_info
+  | BuiltIn      of built_in
   | GivenNormal  of message
   | GivenVariant of variant
 
@@ -288,12 +292,13 @@ let validate_declarations (decls : declarations) : (unit, error) result =
 
 
 let built_in_declarations : parsed_declarations =
-  let ( ==> ) (x : identifier) ((params, info) : parameter list * built_in_info) =
+  let ( ==> ) (x : identifier) ((params, info) : parameter list * built_in) =
     (x, { pdef_params = params; pdef_main = PBuiltIn(info); })
   in
   [
-    "int"    ==> ([], ());
-    "string" ==> ([], ());
-    "option" ==> (["v"], ());
-    "list"   ==> (["v"], ());
+    "bool"   ==> ([], BBool);
+    "int"    ==> ([], BInt);
+    "string" ==> ([], BString);
+    "option" ==> (["v"], BOption("v"));
+    "list"   ==> (["v"], BList("v"));
   ]

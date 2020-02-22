@@ -24,6 +24,7 @@ module Output : sig
   val succeed : tree -> tree
   val stringify_declaration : declaration -> string
   val define_value : identifier -> identifier list -> tree -> declaration
+  val built_in : built_in -> declaration
 
 end = struct
 
@@ -125,7 +126,7 @@ end = struct
       arguments = [ StringLiteral(argument_key); otree; ]
     }
 
-  let branching omap =
+  let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
       field_access label_key (Identifier(Var("Json.Decode.string")))
     in
@@ -230,6 +231,49 @@ end = struct
           (String.concat "" (oparams |> List.map (fun (Var(s)) -> " " ^ s)))
           (stringify_tree 1 otree)
 
+  let built_in (builtin : built_in) : declaration =
+    match builtin with
+    | BBool ->
+        DefVal{
+          val_name = global "bool";
+          parameters = [];
+          body       = Identifier(Var("Json.Decode.bool"));
+        }
+
+    | BInt ->
+        DefVal{
+          val_name   = global "int";
+          parameters = [];
+          body       = Identifier(Var("Json.Decode.int"));
+        }
+
+    | BString ->
+        DefVal{
+          val_name   = global "string";
+          parameters = [];
+          body       = Identifier(Var("Json.Decode.string"));
+        }
+
+    | BList(_) ->
+        DefVal{
+          val_name   = global "list";
+          parameters = [];
+          body       = Identifier(Var("Json.Decode.list"));
+        }
+
+    | BOption(s) ->
+        let ovar = local_for_parameter s in
+        let omap =
+          VariantMap.empty
+            |> VariantMap.add "None" (succeed (constructor "Nothing"))
+            |> VariantMap.add "Some" (access_argument (map (constructor "Just") (Identifier(ovar))))
+        in
+        DefVal{
+          val_name   = global "option";
+          parameters = [ovar];
+          body       = branching omap;
+        }
+
 end
 
 
@@ -286,13 +330,14 @@ and generate_message_decoder (msg : message) =
 
 
 let generate_decoder (decls : declarations) =
-  let acc =
+  let odecls =
     DeclMap.fold (fun name def acc ->
       let ovar = Output.global name in
       let oparams = def.def_params |> List.map Output.local_for_parameter in
       match def.def_main with
-      | BuiltIn(_) ->
-          acc
+      | BuiltIn(builtin) ->
+          let odecl = Output.built_in builtin in
+          Alist.extend acc odecl
 
       | GivenNormal(msg) ->
           let otree = generate_message_decoder msg in
@@ -313,6 +358,8 @@ let generate_decoder (decls : declarations) =
           let odecl_val = Output.define_value ovar oparams otree in
           Alist.extend acc odecl_val
 
-    ) decls Alist.empty
+    ) decls Alist.empty |> Alist.to_list
   in
-  acc |> Alist.to_list |> List.map Output.stringify_declaration |> String.concat "\n"
+  odecls |> List.map (fun odecl ->
+    Output.stringify_declaration odecl ^ "\n\n"
+  ) |> String.concat ""
