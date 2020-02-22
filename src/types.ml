@@ -2,6 +2,9 @@
 type identifier = string
 [@@deriving show { with_path = false; }]
 
+type variable = string
+[@@deriving show { with_path = false; }]
+
 type key = string
 [@@deriving show { with_path = false; }]
 
@@ -9,6 +12,7 @@ type constructor = string
 [@@deriving show { with_path = false; }]
 
 type parsed_message =
+  | PVariable of variable
   | PName    of identifier
   | PRecord  of (string * parsed_message) list
   | PVariant of (string * parsed_message option) list
@@ -17,9 +21,16 @@ type parsed_message =
 type built_in_info = unit
   (* TODO *)
 
-type parsed_definition =
+type argument = string
+
+type parsed_definition_main =
   | PBuiltIn of built_in_info
   | PGiven   of parsed_message
+
+type parsed_definition = {
+  pdef_args : argument list;
+  pdef_main : parsed_definition_main;
+}
 
 type parsed_declarations = (identifier * parsed_definition) list
 
@@ -44,6 +55,7 @@ let pp_variant_map pp ppf variantmap =
   Format.fprintf ppf "@ @])"
 
 type message =
+  | Variable of variable
   | Name    of identifier
   | Record  of message RecordMap.t
       [@printer (pp_record_map pp_message)]
@@ -53,9 +65,14 @@ type message =
 
 module DeclMap = Map.Make(String)
 
-type definition =
+type definition_main =
   | BuiltIn of built_in_info
   | Given   of message
+
+type definition = {
+  def_args : argument list;
+  def_main : definition_main;
+}
 
 type declarations = definition DeclMap.t
 
@@ -64,6 +81,7 @@ type error =
   | FieldDefinedMoreThanOnce       of { key : key; }
   | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
   | UndefinedMessageName           of { name : identifier; }
+  | UndefinedVariable              of { variable : variable; }
 [@@deriving show { with_path = false; }]
 
 module ResultMonad : sig
@@ -89,6 +107,9 @@ end
 let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   let open ResultMonad in
   match pmsg with
+  | PVariable(x) ->
+      return (Variable(x))
+
   | PName(name) ->
       return (Name(name))
 
@@ -126,21 +147,32 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
     if declmap |> DeclMap.mem name then
       error (MessageNameDefinedMoreThanOnce{ name = name; })
     else
-      match pdef with
-      | PBuiltIn(info) ->
-          return (declmap |> DeclMap.add name (BuiltIn(info)))
+      begin
+        match pdef.pdef_main with
+        | PBuiltIn(info) ->
+            return (BuiltIn(info))
 
-      | PGiven(pmsg) ->
-          normalize_message pmsg >>= fun msg ->
-          return (declmap |> DeclMap.add name (Given(msg)))
+        | PGiven(pmsg) ->
+            normalize_message pmsg >>= fun msg ->
+            return (Given(msg))
+      end >>= fun defmain ->
+      let def = { def_args = pdef.pdef_args; def_main = defmain } in
+      return (declmap |> DeclMap.add name def)
   ) (return DeclMap.empty)
 
 
-let rec validate_message (is_defined : identifier -> bool) (msg : message) : (unit, error) result =
+let rec validate_message (is_defined_identifier : identifier -> bool) (is_defined_variable : variable -> bool) (msg : message) : (unit, error) result =
+  let iter = validate_message is_defined_identifier is_defined_variable in
   let open ResultMonad in
   match msg with
+  | Variable(x) ->
+      if is_defined_variable x then
+        return ()
+      else
+        error (UndefinedVariable{ variable = x; })
+
   | Name(name) ->
-      if is_defined name then
+      if is_defined_identifier name then
         return ()
       else
         error (UndefinedMessageName{ name = name; })
@@ -148,7 +180,7 @@ let rec validate_message (is_defined : identifier -> bool) (msg : message) : (un
   | Record(rcd) ->
       RecordMap.fold (fun _key vmsg res ->
         res >>= fun () ->
-        validate_message is_defined vmsg
+        iter vmsg
       ) rcd (return ())
 
   | Variant(variant) ->
@@ -156,21 +188,28 @@ let rec validate_message (is_defined : identifier -> bool) (msg : message) : (un
         res >>= fun () ->
         match argmsgopt with
         | None         -> return ()
-        | Some(argmsg) -> validate_message is_defined argmsg
+        | Some(argmsg) -> iter argmsg
       ) variant (return ())
 
 
 let validate_declarations (decls : declarations) : (unit, error) result =
-  let is_defined name =
+  let is_defined_identifier name =
     decls |> DeclMap.mem name
   in
   let open ResultMonad in
   DeclMap.fold (fun _ def res ->
     res >>= fun () ->
-    match def with
-    | BuiltIn(_) ->
-        return ()
-
-    | Given(msg) ->
-        validate_message is_defined msg
+    match def.def_main with
+    | BuiltIn(_) -> return ()
+    | Given(msg) -> validate_message is_defined_identifier (fun v -> def.def_args |> List.mem v) msg
   ) decls (return ())
+
+
+let built_in_declarations : parsed_declarations =
+  let ( ==> ) (x : identifier) ((args, info) : argument list * built_in_info) =
+    (x, { pdef_args = args; pdef_main = PBuiltIn(info); })
+  in
+  [
+    "int"    ==> ([], ());
+    "string" ==> ([], ());
+  ]

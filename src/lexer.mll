@@ -21,6 +21,7 @@ rule token = parse
 | ")" { RPAREN }
 | ":" { COLON }
 | "," { COMMA }
+| ("$" (identifier as x)) { VARIABLE(x) }
 | identifier { IDENTIFIER(Lexing.lexeme lexbuf) }
 | constructor { CONSTRUCTOR(Lexing.lexeme lexbuf) }
 | eof { EOI }

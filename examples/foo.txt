@@ -1,6 +1,6 @@
-bib := {
+bib($x) := {
   title: string,
-  author: string,
+  author: $x,
   type: (
     | Article: article
     | InProceedings: {
