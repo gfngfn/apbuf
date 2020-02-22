@@ -1,120 +1,280 @@
 
 open Types
 
-type output_variable =
-  | OVar of string
-[@@deriving show { with_path = false; }]
 
-type output_tree =
-  | OIdentifier of output_variable
-  | OApplication of {
-      applied   : output_variable;
-      arguments : output_tree list;
+module Output : sig
+
+  type identifier
+  type tree
+  type declaration
+  val identifier : identifier -> tree
+  val application : identifier -> tree list -> tree
+  val abstraction : identifier -> tree -> tree
+  val string_literal : string -> tree
+  val constructor : Types.constructor -> tree
+  val record : tree RecordMap.t -> tree
+  val branching : tree VariantMap.t -> tree
+  val global : Types.identifier -> identifier
+  val local_for_key : Types.key -> identifier
+  val local_for_parameter : Types.variable -> identifier
+  val field_access : Types.key -> tree -> tree
+  val access_argument : tree -> tree
+  val and_then : tree -> tree -> tree
+  val map : tree -> tree -> tree
+  val succeed : tree -> tree
+  val stringify_declaration : declaration -> string
+  val define_value : identifier -> identifier list -> tree -> declaration
+
+end = struct
+
+  let label_key    = "_label"
+  let argument_key = "_arg"
+
+  type identifier =
+    | Var of string
+
+  type pattern =
+    | StringPattern of string
+    | IdentifierPattern of identifier
+
+  type tree =
+    | Identifier of identifier
+    | Application of {
+        applied   : identifier;
+        arguments : tree list;
+      }
+    | Abstract of {
+        variable : identifier;
+        body     : tree;
+      }
+    | StringLiteral of string
+    | Constructor of string
+    | Record of tree RecordMap.t
+    | Case of {
+        subject  : tree;
+        branches : (pattern * tree) list;
+      }
+
+  type declaration =
+    | DefVal of {
+        val_name   : identifier;
+        parameters : identifier list;
+        body       : tree;
+      }
+
+  let identifier ovar =
+    Identifier(ovar)
+
+  let application ovar otrees =
+    Application{
+      applied   = ovar;
+      arguments = otrees;
     }
-  | OAbstract of {
-      variable : output_variable;
-      body     : output_tree;
+
+  let abstraction ovar otree =
+    Abstract{
+      variable = ovar;
+      body     = otree;
     }
-  | OStringLiteral of string
-  | OConstructor of string
-  | ORecord of output_tree RecordMap.t
-      [@printer (pp_record_map pp_output_tree)]
-  | OBranching of output_tree VariantMap.t
-      [@printer (fun ppf _ -> Format.fprintf ppf "<branch>")]
-[@@deriving show { with_path = false; }]
 
-type output_declaration =
-  | ODefVal of {
-      val_name   : output_variable;
-      parameters : output_variable list;
-      body       : output_tree;
+  let string_literal s =
+    StringLiteral(s)
+
+  let constructor ctor =
+    Constructor(ctor)
+
+  let record orcd =
+    Record(orcd)
+
+  let global name =
+    Var("decode_" ^ name)
+
+  let local_for_key x =
+    Var("local_key_" ^ x)
+
+  let local_for_parameter x =
+    Var("local_param_" ^ x)
+
+  let field_access (key : key) (otree : tree) : tree =
+    Application{
+      applied   = Var("Json.Decode.field");
+      arguments = [ StringLiteral(key); otree; ];
     }
-[@@deriving show { with_path = false; }]
+
+  let and_then (otree_cont : tree) (otree_dec : tree) : tree =
+    Application{
+      applied   = Var("Json.Decode.andThen");
+      arguments = [ otree_cont; otree_dec; ];
+    }
+
+  let map (otree_map : tree) (otree_dec : tree) : tree =
+    Application{
+      applied   = Var("Json.Decode.map");
+      arguments = [ otree_map; otree_dec; ];
+    }
+
+  let succeed (otree : tree) =
+    Application{
+      applied   = Var("Json.Decode.succeed");
+      arguments = [ otree; ];
+    }
+
+  let access_argument (otree : tree) =
+    Application{
+      applied = Var("Json.Decoder.field");
+      arguments = [ StringLiteral(argument_key); otree; ]
+    }
+
+  let branching omap =
+    let otree_accesslabel =
+      field_access label_key (Identifier(Var("Json.Decode.string")))
+    in
+    let otree_cont =
+      let ovar_temp = Var("temp") in
+      let branches =
+        let acc =
+          VariantMap.fold (fun ctor branch acc ->
+            Alist.extend acc (StringPattern(ctor), branch)
+          ) omap Alist.empty
+        in
+        let ovar_other = Var("other") in
+        let otree_err =
+          Application{
+            applied   = Var("Json.Decode.fail");
+            arguments = [ Identifier(ovar_other) ];
+          }
+        in
+        Alist.extend acc (IdentifierPattern(ovar_other), otree_err) |> Alist.to_list
+      in
+      Abstract{
+        variable = ovar_temp;
+        body = Case{
+          subject  = Identifier(ovar_temp);
+          branches = branches;
+        };
+      }
+    in
+    and_then otree_cont otree_accesslabel
 
 
-let make_global_val_name name =
-  OVar("decode_" ^ name)
+  let define_value ovar oparams otree =
+    DefVal{
+      val_name   = ovar;
+      parameters = oparams;
+      body       = otree;
+    }
 
 
-let make_local_val_for_key x =
-  OVar("local_key_" ^ x)
+  let stringify_pattern (pat : pattern) : string =
+    match pat with
+    | StringPattern(s) ->
+        Format.sprintf "\"%s\"" s
+
+    | IdentifierPattern(Var(s)) ->
+        s
 
 
-let make_local_val_for_parameter x =
-  OVar("local_param_" ^ x)
+  let rec stringify_tree (otree : tree) : string =
+    match otree with
+    | Identifier(Var(s)) ->
+        s
+
+    | Application{ applied = Var(s); arguments = args; } ->
+        begin
+          match args with
+          | [] ->
+              s
+
+          | _ :: _ ->
+              let sargs = args |> List.map stringify_tree in
+              Format.sprintf "(%s %s)" s (String.concat " " sargs)
+        end
+
+    | Abstract{ variable = Var(s); body = body; } ->
+        Format.sprintf "(\\%s -> %s)" s (stringify_tree body)
+
+    | StringLiteral(s) ->
+        Format.sprintf "\"%s\"" s
+
+    | Constructor(ctor) ->
+        ctor
+
+    | Record(orcd) ->
+        let ss =
+          RecordMap.fold (fun key otree acc ->
+            let s = Format.sprintf "%s = %s" key (stringify_tree otree) in
+            Alist.extend acc s
+          ) orcd Alist.empty |> Alist.to_list
+        in
+        Format.sprintf "{ %s }" (String.concat ", " ss)
+
+    | Case{ subject = otree_subject; branches = branches } ->
+        let ss =
+          branches |> List.map (fun (pat, otree) ->
+            Format.sprintf "%s -> %s" (stringify_pattern pat) (stringify_tree otree)
+          )
+        in
+        Format.sprintf "(case %s of %s)" (stringify_tree otree_subject) (String.concat " | " ss)
 
 
-let field_access (key : key) (otree : output_tree) : output_tree =
-  OApplication{
-    applied   = OVar("Json.Decode.field");
-    arguments = [ OStringLiteral(key); otree; ];
-  }
+  let stringify_declaration (odecl : declaration) : string =
+    match odecl with
+    | DefVal{
+        val_name   = Var(s);
+        parameters = oparams;
+        body       = otree;
+      } ->
+        Format.sprintf "%s %s = %s"
+          s
+          (String.concat " " (oparams |> List.map (fun (Var(s)) -> s)))
+          (stringify_tree otree)
+
+end
 
 
-let and_then (otree_cont : output_tree) (otree_dec : output_tree) : output_tree =
-  OApplication{
-    applied   = OVar("Json.Decode.andThen");
-    arguments = [ otree_cont; otree_dec; ];
-  }
+let decoder_of_variable (x : variable) : Output.tree =
+  Output.identifier (Output.local_for_parameter x)
 
 
-let decode_map (otree_map : output_tree) (otree_dec : output_tree) : output_tree =
-  OApplication{
-    applied   = OVar("Json.Decode.map");
-    arguments = [ otree_map; otree_dec; ];
-  }
-
-
-let decode_succeed (otree : output_tree) : output_tree =
-  OApplication{
-    applied   = OVar("Json.Decode.succeed");
-    arguments = [ otree; ];
-  }
-
-
-let decoder_of_variable (x : variable) : output_tree =
-  OIdentifier(make_local_val_for_parameter x)
-
-
-let rec decoder_of_name (name : identifier) (args : message list) : output_tree =
+let rec decoder_of_name (name : identifier) (args : message list) : Output.tree =
   let otrees = args |> List.map generate_message_decoder in
-  OApplication{
-    applied   = make_global_val_name name;
-    arguments = otrees;
-  }
+  Output.application (Output.global name) otrees
 
 
-and decoder_of_record (rcd : message RecordMap.t) : output_tree =
+and decoder_of_record (rcd : message RecordMap.t) : Output.tree =
   let otree_ans =
-    ORecord(rcd |> RecordMap.mapi (fun key _ ->
-      OIdentifier(make_local_val_for_key key)
-    ))
+    let orcd =
+      rcd |> RecordMap.mapi (fun key _ ->
+        Output.identifier (Output.local_for_key key)
+      )
+    in
+    Output.record orcd
   in
   let acc =
     RecordMap.fold (fun key vmsg acc ->
       let otree_decv = generate_message_decoder vmsg in
-      let otree_accessk = field_access key otree_decv in
+      let otree_accessk = Output.field_access key otree_decv in
       Alist.extend acc (key, otree_accessk)
     ) rcd Alist.empty
   in
   List.fold_right (fun (key, otree_accessk) otree_acc ->
-    and_then (OAbstract{ variable = make_local_val_for_key key; body = otree_acc; }) otree_accessk
+    Output.and_then (Output.abstraction (Output.local_for_key key) otree_acc) otree_accessk
   ) (acc |> Alist.to_list) otree_ans
 
 
-and decoder_of_variant (variant : (message option) VariantMap.t) : output_tree =
+and decoder_of_variant (variant : (message option) VariantMap.t) : Output.tree =
   let ocases =
     variant |> VariantMap.mapi (fun ctor argmsgopt ->
       match argmsgopt with
       | None ->
-          decode_succeed (OConstructor(ctor))
+          Output.succeed (Output.constructor ctor)
 
       | Some(argmsg) ->
           let otree_decarg = generate_message_decoder argmsg in
-          decode_map (OConstructor(ctor)) otree_decarg
+          Output.access_argument (Output.map (Output.constructor ctor) otree_decarg)
     )
   in
-  OBranching(ocases)
+  Output.branching ocases
 
 
 and generate_message_decoder (msg : message) =
@@ -124,62 +284,18 @@ and generate_message_decoder (msg : message) =
   | Record(rcd)      -> decoder_of_record rcd
 
 
-let rec stringify_tree (otree : output_tree) : string =
-  match otree with
-  | OIdentifier(OVar(s)) ->
-      s
-
-  | OApplication{ applied = OVar(s); arguments = args; } ->
-      begin
-        match args with
-        | [] ->
-            s
-
-        | _ :: _ ->
-            let sargs = args |> List.map stringify_tree in
-            Format.sprintf "(%s %s)" s (String.concat " " sargs)
-      end
-
-  | OAbstract{ variable = OVar(s); body = body; } ->
-      Format.sprintf "(\\%s -> %s)" s (stringify_tree body)
-
-  | OStringLiteral(s) ->
-      Format.sprintf "\"%s\"" s
-
-  | OConstructor(ctor) ->
-      ctor
-
-  | ORecord(orcd) ->
-      let ss =
-        RecordMap.fold (fun key otree acc ->
-          let s = Format.sprintf "%s = %s" key (stringify_tree otree) in
-          Alist.extend acc s
-        ) orcd Alist.empty |> Alist.to_list
-      in
-      Format.sprintf "{ %s }" (String.concat ", " ss)
-
-  | OBranching(_obr) ->
-      "(branching)" (* TODO *)
-
-
 let generate_decoder (decls : declarations) =
   let acc =
     DeclMap.fold (fun name def acc ->
-      let ovar = make_global_val_name name in
-      let oparams = def.def_params |> List.map make_local_val_for_parameter in
+      let ovar = Output.global name in
+      let oparams = def.def_params |> List.map Output.local_for_parameter in
       match def.def_main with
       | BuiltIn(_) ->
           acc
 
       | GivenNormal(msg) ->
           let otree = generate_message_decoder msg in
-          let odecl =
-            ODefVal{
-              val_name   = ovar;
-              parameters = oparams;
-              body       = otree;
-            }
-          in
+          let odecl = Output.define_value ovar oparams otree in
           Alist.extend acc odecl
 
       | GivenVariant(variant) ->
@@ -193,25 +309,9 @@ let generate_decoder (decls : declarations) =
             }
           in
 *)
-          let odecl_val =
-            ODefVal{
-              val_name   = ovar;
-              parameters = oparams;
-              body       = otree;
-            }
-          in
+          let odecl_val = Output.define_value ovar oparams otree in
           Alist.extend acc odecl_val
 
     ) decls Alist.empty
   in
-  acc |> Alist.to_list |> List.map (function
-  | ODefVal{
-      val_name   = OVar(s);
-      parameters = oparams;
-      body       = otree;
-    } ->
-      Format.sprintf "%s %s = %s"
-        s
-        (String.concat " " (oparams |> List.map (fun (OVar(s)) -> s)))
-        (stringify_tree otree)
-  ) |> String.concat "\n"
+  acc |> Alist.to_list |> List.map Output.stringify_declaration |> String.concat "\n"
