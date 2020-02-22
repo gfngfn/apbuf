@@ -16,10 +16,11 @@ type output_tree =
       body     : output_tree;
     }
   | OStringLiteral of string
+  | OConstructor of string
   | ORecord of output_tree RecordMap.t
       [@printer (pp_record_map pp_output_tree)]
-  | OBranching of (output_tree option) VariantMap.t
-      [@printer (pp_variant_map pp_output_tree)]
+  | OBranching of output_tree VariantMap.t
+      [@printer (fun ppf _ -> Format.fprintf ppf "<branch>")]
 [@@deriving show { with_path = false; }]
 
 type output_declaration =
@@ -50,10 +51,24 @@ let field_access (key : key) (otree : output_tree) : output_tree =
   }
 
 
-let and_then (otree_cont : output_tree) (otree : output_tree) : output_tree =
+let and_then (otree_cont : output_tree) (otree_dec : output_tree) : output_tree =
   OApplication{
     applied   = OVar("Json.Decode.andThen");
-    arguments = [ otree_cont; otree; ];
+    arguments = [ otree_cont; otree_dec; ];
+  }
+
+
+let decode_map (otree_map : output_tree) (otree_dec : output_tree) : output_tree =
+  OApplication{
+    applied   = OVar("Json.Decode.map");
+    arguments = [ otree_map; otree_dec; ];
+  }
+
+
+let decode_succeed (otree : output_tree) : output_tree =
+  OApplication{
+    applied   = OVar("Json.Decode.succeed");
+    arguments = [ otree; ];
   }
 
 
@@ -89,10 +104,14 @@ and decoder_of_record (rcd : message RecordMap.t) : output_tree =
 
 and decoder_of_variant (variant : (message option) VariantMap.t) : output_tree =
   let ocases =
-    variant |> VariantMap.map (fun argmsgopt ->
+    variant |> VariantMap.mapi (fun ctor argmsgopt ->
       match argmsgopt with
-      | None         -> None
-      | Some(argmsg) -> Some(generate_message_decoder argmsg)
+      | None ->
+          decode_succeed (OConstructor(ctor))
+
+      | Some(argmsg) ->
+          let otree_decarg = generate_message_decoder argmsg in
+          decode_map (OConstructor(ctor)) otree_decarg
     )
   in
   OBranching(ocases)
@@ -103,7 +122,6 @@ and generate_message_decoder (msg : message) =
   | Variable(x)      -> decoder_of_variable x
   | Name(name, args) -> decoder_of_name name args
   | Record(rcd)      -> decoder_of_record rcd
-  | Variant(variant) -> decoder_of_variant variant
 
 
 let rec stringify_tree (otree : output_tree) : string =
@@ -128,6 +146,9 @@ let rec stringify_tree (otree : output_tree) : string =
   | OStringLiteral(s) ->
       Format.sprintf "\"%s\"" s
 
+  | OConstructor(ctor) ->
+      ctor
+
   | ORecord(orcd) ->
       let ss =
         RecordMap.fold (fun key otree acc ->
@@ -135,7 +156,7 @@ let rec stringify_tree (otree : output_tree) : string =
           Alist.extend acc s
         ) orcd Alist.empty |> Alist.to_list
       in
-      Format.sprintf "{%s}" (String.concat ", " ss)
+      Format.sprintf "{ %s }" (String.concat ", " ss)
 
   | OBranching(_obr) ->
       "(branching)" (* TODO *)
@@ -144,20 +165,42 @@ let rec stringify_tree (otree : output_tree) : string =
 let generate_decoder (decls : declarations) =
   let acc =
     DeclMap.fold (fun name def acc ->
+      let ovar = make_global_val_name name in
+      let oparams = def.def_params |> List.map make_local_val_for_parameter in
       match def.def_main with
       | BuiltIn(_) ->
           acc
 
-      | Given(msg) ->
+      | GivenNormal(msg) ->
           let otree = generate_message_decoder msg in
           let odecl =
             ODefVal{
-              val_name   = make_global_val_name name;
-              parameters = def.def_params |> List.map make_local_val_for_parameter;
+              val_name   = ovar;
+              parameters = oparams;
               body       = otree;
             }
           in
           Alist.extend acc odecl
+
+      | GivenVariant(variant) ->
+          let otree = decoder_of_variant variant in
+(*
+          let odecl_type =
+            ODefType{
+              type_name       = make_global_type_name msg;
+              type_parameters = def.def_params |> List.map make_local_type_parameter;
+              body            =
+            }
+          in
+*)
+          let odecl_val =
+            ODefVal{
+              val_name   = ovar;
+              parameters = oparams;
+              body       = otree;
+            }
+          in
+          Alist.extend acc odecl_val
 
     ) decls Alist.empty
   in

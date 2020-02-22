@@ -18,6 +18,8 @@
 decls ::=
   | ident ':=' msg decls
   | ident '(' params ')' ':=' msg decls
+  | ident ':=' variant decls
+  | ident '(' params ')' ':=' variant decls
   | (empty)
 
 params ::=

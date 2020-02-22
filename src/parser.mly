@@ -19,7 +19,12 @@ toplevel:
 | decls=list(msgdecl); EOI { decls }
 ;
 msgdecl:
-| name=msgname; params=params; DEFEQ; msg=msg { (name, { pdef_params = params; pdef_main = PGiven(msg); }) }
+| name=msgname; params=params; DEFEQ; msg=msg {
+    (name, { pdef_params = params; pdef_main = PGivenNormal(msg); })
+  }
+| name=msgname; params=params; DEFEQ; variant=variant; {
+    (name, { pdef_params = params; pdef_main = PGivenVariant(variant) })
+  }
 ;
 msgname:
 | name=IDENTIFIER { name }
@@ -41,7 +46,6 @@ msg:
 | name=msgname                    { PName(name, []) }
 | name=msgname; LPAREN; msg=msg; tail=argssub { PName(name, msg :: tail) }
 | BRECORD; rcd=record; ERECORD    { PRecord(rcd) }
-| LPAREN; variant=variant; RPAREN { PVariant(variant) }
 ;
 argssub:
 | RPAREN                       { [] }

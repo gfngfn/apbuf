@@ -15,7 +15,9 @@ type parsed_message =
   | PVariable of variable
   | PName    of identifier * parsed_message list
   | PRecord  of (string * parsed_message) list
-  | PVariant of (string * parsed_message option) list
+[@@deriving show { with_path = false; }]
+
+type parsed_variant = (constructor * parsed_message option) list
 [@@deriving show { with_path = false; }]
 
 type built_in_info = unit
@@ -24,8 +26,9 @@ type built_in_info = unit
 type parameter = string
 
 type parsed_definition_main =
-  | PBuiltIn of built_in_info
-  | PGiven   of parsed_message
+  | PBuiltIn      of built_in_info
+  | PGivenNormal  of parsed_message
+  | PGivenVariant of parsed_variant
 
 type parsed_definition = {
   pdef_params : parameter list;
@@ -45,9 +48,9 @@ let pp_record_map pp ppf rcdmap =
 
 module VariantMap = Map.Make(String)
 
-let pp_variant_map pp ppf variantmap =
+let pp_variant_map pp ppf variant =
   Format.fprintf ppf "@[<hov2>*V(@ ";
-  variantmap |> VariantMap.iter (fun k vopt ->
+  variant |> VariantMap.iter (fun k vopt ->
     match vopt with
     | None    -> Format.fprintf ppf "%s,@ " k
     | Some(v) -> Format.fprintf ppf "%s@ ->@ @[%a@],@ " k pp v
@@ -59,15 +62,18 @@ type message =
   | Name    of identifier * message list
   | Record  of message RecordMap.t
       [@printer (pp_record_map pp_message)]
-  | Variant of (message option) VariantMap.t
-      [@printer (pp_variant_map pp_message)]
+[@@deriving show { with_path = false; }]
+
+type variant = (message option) VariantMap.t
+  [@printer (pp_variant_map pp_message)]
 [@@deriving show { with_path = false; }]
 
 module DeclMap = Map.Make(String)
 
 type definition_main =
-  | BuiltIn of built_in_info
-  | Given   of message
+  | BuiltIn      of built_in_info
+  | GivenNormal  of message
+  | GivenVariant of variant
 
 type definition = {
   def_params : parameter list;
@@ -152,20 +158,22 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
       ) (return RecordMap.empty) >>= fun rcdmap ->
       return (Record(rcdmap))
 
-  | PVariant(pvariant) ->
-      pvariant |> List.fold_left (fun res (ctor, pmsgsubopt) ->
-        res >>= fun variantmap ->
-        if variantmap |> VariantMap.mem ctor then
-          error (ConstructorDefinedMoreThanOnce{ constructor = ctor; })
-        else
-          begin
-            match pmsgsubopt with
-            | None          -> return None
-            | Some(pmsgsub) -> normalize_message pmsgsub >>= fun msgsub -> return (Some(msgsub))
-          end >>= fun msgsubopt ->
-          return (variantmap |> VariantMap.add ctor msgsubopt)
-      ) (return VariantMap.empty) >>= fun variantmap ->
-      return (Variant(variantmap))
+
+let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
+  let open ResultMonad in
+  pvariant |> List.fold_left (fun res (ctor, pmsgsubopt) ->
+    res >>= fun variantmap ->
+    if variantmap |> VariantMap.mem ctor then
+      error (ConstructorDefinedMoreThanOnce{ constructor = ctor; })
+    else
+      begin
+        match pmsgsubopt with
+        | None          -> return None
+        | Some(pmsgsub) -> normalize_message pmsgsub >>= fun msgsub -> return (Some(msgsub))
+      end >>= fun msgsubopt ->
+      return (variantmap |> VariantMap.add ctor msgsubopt)
+  ) (return VariantMap.empty) >>= fun variantmap ->
+  return (variantmap)
 
 
 let normalize_declarations (pdecls : parsed_declarations) : (declarations, error) result =
@@ -180,9 +188,13 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
         | PBuiltIn(info) ->
             return (BuiltIn(info))
 
-        | PGiven(pmsg) ->
+        | PGivenNormal(pmsg) ->
             normalize_message pmsg >>= fun msg ->
-            return (Given(msg))
+            return (GivenNormal(msg))
+
+        | PGivenVariant(pvariant) ->
+            normalize_variant pvariant >>= fun variant ->
+            return (GivenVariant(variant))
       end >>= fun defmain ->
       let def = { def_params = pdef.pdef_params; def_main = defmain } in
       return (declmap |> DeclMap.add name def)
@@ -226,13 +238,15 @@ let rec validate_message (find_arity : identifier -> int option) (is_defined_var
         iter vmsg
       ) rcd (return ())
 
-  | Variant(variant) ->
-      VariantMap.fold (fun _ctor argmsgopt res ->
-        res >>= fun () ->
-        match argmsgopt with
-        | None         -> return ()
-        | Some(argmsg) -> iter argmsg
-      ) variant (return ())
+
+let validate_variant (find_arity : identifier -> int option) (is_defined_variable : variable -> bool) (variant : variant) : (unit, error) result =
+  let open ResultMonad in
+  VariantMap.fold (fun _ctor argmsgopt res ->
+    res >>= fun () ->
+    match argmsgopt with
+    | None         -> return ()
+    | Some(argmsg) -> validate_message find_arity is_defined_variable argmsg
+  ) variant (return ())
 
 
 module ParamSet = Set.Make(String)
@@ -258,13 +272,18 @@ let validate_declarations (decls : declarations) : (unit, error) result =
   let open ResultMonad in
   DeclMap.fold (fun _ def res ->
     res >>= fun () ->
+    validate_parameters def.def_params >>= fun set ->
+    let is_defined_variable v = set |> ParamSet.mem v in
     match def.def_main with
     | BuiltIn(_) ->
         return ()
 
-    | Given(msg) ->
-        validate_parameters def.def_params >>= fun set ->
-        validate_message find_arity (fun v -> set |> ParamSet.mem v) msg
+    | GivenNormal(msg) ->
+        validate_message find_arity is_defined_variable msg
+
+    | GivenVariant(variant) ->
+        validate_variant find_arity is_defined_variable variant
+
   ) decls (return ())
 
 

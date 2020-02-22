@@ -1,13 +1,14 @@
+bib_type :=
+  | Article: article
+  | InProceedings: {
+      conference: string,
+    }
+  | Other
+
 bib($x) := {
   title: string,
   author: list($x),
-  type: (
-    | Article: article
-    | InProceedings: {
-        conference: string,
-      }
-    | Other
-    ),
+  type: bib_type,
 }
 
 article := {

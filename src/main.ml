@@ -30,8 +30,9 @@ let main s =
       decls |> DeclMap.iter (fun name def ->
         let params = def.def_params in
         match def.def_main with
-        | BuiltIn(_) -> Format.printf "%s%a (built-in),@ " name pp_params params
-        | Given(msg) -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_params params pp_message msg
+        | BuiltIn(_)       -> Format.printf "%s%a (built-in),@ " name pp_params params
+        | GivenNormal(msg) -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_params params pp_message msg
+        | GivenVariant(v)  -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_params params (pp_variant_map pp_message) v
       );
       Format.printf "@]@,";
       let s = GenElm.generate_decoder decls in
