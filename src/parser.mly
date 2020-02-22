@@ -8,7 +8,7 @@
 %token<Types.constructor> CONSTRUCTOR
 
 %start toplevel
-%type<(Types.identifier * Types.parsed_message) list> toplevel
+%type<Types.parsed_declarations> toplevel
 
 %%
 
@@ -16,7 +16,7 @@ toplevel:
 | decls=list(msgdecl); EOI { decls }
 ;
 msgdecl:
-| name=msgname; DEFEQ; msg=msg { (name, msg) }
+| name=msgname; DEFEQ; msg=msg { (name, PGiven(msg)) }
 ;
 msgname:
 | name=IDENTIFIER { name }

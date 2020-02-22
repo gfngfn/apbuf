@@ -14,7 +14,14 @@ type parsed_message =
   | PVariant of (string * parsed_message option) list
 [@@deriving show { with_path = false; }]
 
-type parsed_declarations = (identifier * parsed_message) list
+type built_in_info = unit
+  (* TODO *)
+
+type parsed_definition =
+  | PBuiltIn of built_in_info
+  | PGiven   of parsed_message
+
+type parsed_declarations = (identifier * parsed_definition) list
 
 module RecordMap = Map.Make(String)
 
@@ -46,12 +53,17 @@ type message =
 
 module DeclMap = Map.Make(String)
 
-type declarations = message DeclMap.t
+type definition =
+  | BuiltIn of built_in_info
+  | Given   of message
+
+type declarations = definition DeclMap.t
 
 type error =
   | MessageNameDefinedMoreThanOnce of { name : identifier; }
   | FieldDefinedMoreThanOnce       of { key : key; }
   | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
+  | UndefinedMessageName           of { name : identifier; }
 [@@deriving show { with_path = false; }]
 
 module ResultMonad : sig
@@ -109,11 +121,56 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
 
 let normalize_declarations (pdecls : parsed_declarations) : (declarations, error) result =
   let open ResultMonad in
-  pdecls |> List.fold_left (fun res (name, pmsg) ->
+  pdecls |> List.fold_left (fun res (name, pdef) ->
     res >>= fun declmap ->
     if declmap |> DeclMap.mem name then
       error (MessageNameDefinedMoreThanOnce{ name = name; })
     else
-      normalize_message pmsg >>= fun msg ->
-      return (declmap |> DeclMap.add name msg)
+      match pdef with
+      | PBuiltIn(info) ->
+          return (declmap |> DeclMap.add name (BuiltIn(info)))
+
+      | PGiven(pmsg) ->
+          normalize_message pmsg >>= fun msg ->
+          return (declmap |> DeclMap.add name (Given(msg)))
   ) (return DeclMap.empty)
+
+
+let rec validate_message (is_defined : identifier -> bool) (msg : message) : (unit, error) result =
+  let open ResultMonad in
+  match msg with
+  | Name(name) ->
+      if is_defined name then
+        return ()
+      else
+        error (UndefinedMessageName{ name = name; })
+
+  | Record(rcd) ->
+      RecordMap.fold (fun _key vmsg res ->
+        res >>= fun () ->
+        validate_message is_defined vmsg
+      ) rcd (return ())
+
+  | Variant(variant) ->
+      VariantMap.fold (fun _ctor argmsgopt res ->
+        res >>= fun () ->
+        match argmsgopt with
+        | None         -> return ()
+        | Some(argmsg) -> validate_message is_defined argmsg
+      ) variant (return ())
+
+
+let validate_declarations (decls : declarations) : (unit, error) result =
+  let is_defined name =
+    decls |> DeclMap.mem name
+  in
+  let open ResultMonad in
+  DeclMap.fold (fun _ def res ->
+    res >>= fun () ->
+    match def with
+    | BuiltIn(_) ->
+        return ()
+
+    | Given(msg) ->
+        validate_message is_defined msg
+  ) decls (return ())
