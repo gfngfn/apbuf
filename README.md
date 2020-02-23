@@ -1,13 +1,15 @@
 
-# \[WIP\] APBuf (Algebraic Protocol Buffers)
+# APBuf (Algebraic Protocol Buffers)
 
 ## Summary
 
-*APBuf* (*Algebraic Protocol Buffers*) is a system for generating decoders/encoders from a single configuration file that specifies the data format. It is characterized by the native support of “labeled direct sum” (which corresponds to ADTs (= algebraic data types) in Haskell, OCaml, Elm, etc.).
+*APBuf* (*Algebraic Protocol Buffers*) is a compiler that generates decoders/encoders from a single configuration file that specifies the data format. It is characterized by the native support of “labeled direct sum” (which corresponds to ADTs (= algebraic data types) in Haskell, OCaml, Elm, etc.).
 
-* Taget formats:
+In exchange for its clean representation, APBuf at least currently does not pursue high computational performance.
+
+* Currently supported target formats:
   - JSON
-* Target languages:
+* Currently supported target languages:
   - Elm
 
 
