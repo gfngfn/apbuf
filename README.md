@@ -41,15 +41,13 @@ produces Elm code that has the following API:
 
 ```elm
 module APBufGen exposing (..)
-import Json.Decode as D exposing (Decoder)
-import Json.Encode as E exposing (Value)
+import Json.Decode exposing (Decoder)
+import Json.Encode exposing (Value)
 
 type Geometry
-  = Circle (CircleInfo Int Rational)
-  | Rectangle (RectangleInfo Int)
-
+  = Rectangle (RectangleInfo Int)
+  | Circle (CircleInfo Int Rational)
 decodeGeometry : Decoder Geometry
-
 encodeGeometry : Geometry -> Value
 
 type alias CircleInfo c r = { center : Position c, radius : r }
