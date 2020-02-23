@@ -5,10 +5,11 @@ open Types
 
 let pp decls s =
   let pp_params ppf params =
+    let xs = params |> List.map snd in
     let s =
-      match params with
+      match xs with
       | []     -> ""
-      | _ :: _ -> "(" ^ (params |> String.concat ", ") ^ ")"
+      | _ :: _ -> "(" ^ (xs |> String.concat ", ") ^ ")"
     in
     Format.fprintf ppf "%s" s
   in
@@ -37,11 +38,18 @@ let main path_in =
   let fin = open_in path_in in
   let res =
     let open ResultMonad in
-    let (meta, pdecls) = Parser.toplevel Lexer.token (Lexing.from_channel fin) in
+    let lexbuf =
+      let lexbuf = Lexing.from_channel fin in
+      let open Lexing in
+      lexbuf.lex_start_p <- { lexbuf.lex_start_p with pos_fname = path_in; };
+      lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = path_in; };
+      lexbuf
+    in
+    let (meta, pdecls) = Parser.toplevel Lexer.token lexbuf in
       (* TODO: handle parse error *)
     close_in fin;
     match meta with
-    | MetaOutput("elm", dir) ->
+    | MetaOutput((_, "elm"), (_, dir)) ->
         let dir_out =
           if Filename.is_relative dir then
             Filename.concat dir_in dir

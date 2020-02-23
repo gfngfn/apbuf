@@ -1,4 +1,7 @@
 
+type 'a ranged = Range.t * 'a
+[@@deriving show { with_path = false; }]
+
 type identifier = string
 [@@deriving show { with_path = false; }]
 
@@ -12,12 +15,12 @@ type constructor = string
 [@@deriving show { with_path = false; }]
 
 type parsed_message =
-  | PVariable of variable
-  | PName    of identifier * parsed_message list
-  | PRecord  of (string * parsed_message) list
+  | PVariable of variable ranged
+  | PName    of identifier ranged * parsed_message list
+  | PRecord  of (key ranged * parsed_message) list
 [@@deriving show { with_path = false; }]
 
-type parsed_variant = (constructor * parsed_message option) list
+type parsed_variant = (constructor ranged * parsed_message option) list
 [@@deriving show { with_path = false; }]
 
 type built_in =
@@ -27,19 +30,17 @@ type built_in =
   | BList   of variable
   | BOption of variable
 
-type parameter = string
-
 type parsed_definition_main =
   | PBuiltIn      of built_in
   | PGivenNormal  of parsed_message
   | PGivenVariant of parsed_variant
 
 type parsed_definition = {
-  pdef_params : parameter list;
+  pdef_params : (Range.t * variable) list;
   pdef_main   : parsed_definition_main;
 }
 
-type parsed_declarations = (identifier * parsed_definition) list
+type parsed_declarations = (identifier ranged * parsed_definition) list
 
 module RecordMap = Map.Make(String)
 
@@ -62,9 +63,9 @@ let pp_variant_map pp ppf variant =
   Format.fprintf ppf "@])"
 
 type message =
-  | Variable of variable
-  | Name    of identifier * message list
-  | Record  of message RecordMap.t
+  | Variable of variable ranged
+  | Name     of identifier ranged * message list
+  | Record   of message RecordMap.t
       [@printer (pp_record_map pp_message)]
 [@@deriving show { with_path = false; }]
 
@@ -80,28 +81,29 @@ type definition_main =
   | GivenVariant of variant
 
 type definition = {
-  def_params : parameter list;
+  def_params : (Range.t * variable) list;
   def_main   : definition_main;
 }
 
 type declarations = definition DeclMap.t
 
 type error =
-  | MessageNameDefinedMoreThanOnce of { name : identifier; }
-  | FieldDefinedMoreThanOnce       of { key : key; }
+  | MessageNameDefinedMoreThanOnce of { name : identifier; range : Range.t; }
+  | FieldDefinedMoreThanOnce       of { key : key; range : Range.t; }
   | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
   | UndefinedMessageName           of { name : identifier; }
-  | UndefinedVariable              of { variable : variable; }
+  | UndefinedVariable              of { variable : variable; range : Range.t; }
   | VariableBoundMoreThanOnce      of { variable : variable; }
   | InvalidMessageNameApplication of {
       name           : identifier;
       expected_arity : int;
       actual_arity   : int;
+      range          : Range.t;
     }
 [@@deriving show { with_path = false; }]
 
 type meta_spec =
-  | MetaOutput of string * string
+  | MetaOutput of string ranged * string ranged
 
 module ResultMonad : sig
   val ( >>= ) : ('a, error) result -> ('a -> ('b, error) result) -> ('b, error) result
@@ -155,10 +157,10 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
       return (Name(name, acc |> Alist.to_list))
 
   | PRecord(prcd) ->
-      prcd |> List.fold_left (fun res (key, pmsgsub) ->
+      prcd |> List.fold_left (fun res ((rng, key), pmsgsub) ->
         res >>= fun rcdmap ->
         if rcdmap |> RecordMap.mem key then
-          error (FieldDefinedMoreThanOnce{ key = key; })
+          error (FieldDefinedMoreThanOnce{ key = key; range = rng; })
         else
           normalize_message pmsgsub >>= fun msgsub ->
           return (rcdmap |> RecordMap.add key msgsub)
@@ -168,7 +170,7 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
 
 let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
   let open ResultMonad in
-  pvariant |> List.fold_left (fun res (ctor, pmsgsubopt) ->
+  pvariant |> List.fold_left (fun res ((_, ctor), pmsgsubopt) ->
     res >>= fun variantmap ->
     if variantmap |> VariantMap.mem ctor then
       error (ConstructorDefinedMoreThanOnce{ constructor = ctor; })
@@ -185,10 +187,10 @@ let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
 
 let normalize_declarations (pdecls : parsed_declarations) : (declarations, error) result =
   let open ResultMonad in
-  pdecls |> List.fold_left (fun res (name, pdef) ->
+  pdecls |> List.fold_left (fun res ((rng, name), pdef) ->
     res >>= fun declmap ->
     if declmap |> DeclMap.mem name then
-      error (MessageNameDefinedMoreThanOnce{ name = name; })
+      error (MessageNameDefinedMoreThanOnce{ name = name; range = rng; })
     else
       begin
         match pdef.pdef_main with
@@ -212,13 +214,13 @@ let rec validate_message (find_arity : identifier -> int option) (is_defined_var
   let iter = validate_message find_arity is_defined_variable in
   let open ResultMonad in
   match msg with
-  | Variable(x) ->
+  | Variable((rng, x)) ->
       if is_defined_variable x then
         return ()
       else
-        error (UndefinedVariable{ variable = x; })
+        error (UndefinedVariable{ variable = x; range = rng; })
 
-  | Name(name, args) ->
+  | Name((rng, name), args) ->
       begin
         match find_arity name with
         | Some(n_expected) ->
@@ -233,6 +235,7 @@ let rec validate_message (find_arity : identifier -> int option) (is_defined_var
                 name           = name;
                 expected_arity = n_expected;
                 actual_arity   = n_actual;
+                range          = rng;
               })
 
         | None ->
@@ -259,9 +262,9 @@ let validate_variant (find_arity : identifier -> int option) (is_defined_variabl
 module ParamSet = Set.Make(String)
 
 
-let validate_parameters (params : parameter list) : (ParamSet.t, error) result =
+let validate_parameters (params : (Range.t * variable) list) : (ParamSet.t, error) result =
   let open ResultMonad in
-  params |> List.fold_left (fun res x ->
+  params |> List.fold_left (fun res (_, x) ->
     res >>= fun set ->
     if set |> ParamSet.mem x then
       error (VariableBoundMoreThanOnce{ variable = x; })
@@ -295,13 +298,14 @@ let validate_declarations (decls : declarations) : (unit, error) result =
 
 
 let built_in_declarations : parsed_declarations =
-  let ( ==> ) (x : identifier) ((params, info) : parameter list * built_in) =
+  let ( !@ ) t = (Range.dummy t, t) in
+  let ( ==> ) (x : identifier ranged) ((params, info) : (variable ranged) list * built_in) =
     (x, { pdef_params = params; pdef_main = PBuiltIn(info); })
   in
   [
-    "bool"   ==> ([], BBool);
-    "int"    ==> ([], BInt);
-    "string" ==> ([], BString);
-    "option" ==> (["v"], BOption("v"));
-    "list"   ==> (["v"], BList("v"));
+    !@ "bool"   ==> ([], BBool);
+    !@ "int"    ==> ([], BInt);
+    !@ "string" ==> ([], BString);
+    !@ "option" ==> ([(Range.dummy "option", "v")], BOption("v"));
+    !@ "list"   ==> ([(Range.dummy "list", "v")], BList("v"));
   ]

@@ -3,16 +3,16 @@
 %}
 
 %token EOI
-%token DEFEQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
-%token META_OUTPUT
-%token<Types.variable> VARIABLE
-%token<Types.identifier> IDENTIFIER
-%token<Types.constructor> CONSTRUCTOR
-%token<string> STRING
+%token<Range.t> DEFEQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
+%token<Range.t> META_OUTPUT
+%token<Range.t * Types.variable> VARIABLE
+%token<Range.t * Types.identifier> IDENTIFIER
+%token<Range.t * Types.constructor> CONSTRUCTOR
+%token<Range.t * string> STRING
 
 %start toplevel
 %type<Types.meta_spec * Types.parsed_declarations> toplevel
-%type<Types.variable list> params
+%type<(Range.t * Types.variable) list> params
 %type<Types.parsed_message list> argssub
 
 %%

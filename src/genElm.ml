@@ -479,17 +479,17 @@ and decoder_of_variant (variant : (message option) VariantMap.t) : Output.tree =
 
 and generate_message_decoder (msg : message) : Output.tree =
   match msg with
-  | Variable(x)      -> decoder_of_variable x
-  | Name(name, args) -> decoder_of_name name args
-  | Record(rcd)      -> decoder_of_record rcd
+  | Variable((_, x))      -> decoder_of_variable x
+  | Name((_, name), args) -> decoder_of_name name args
+  | Record(rcd)           -> decoder_of_record rcd
 
 
 let rec generate_message_type (msg : message) : Output.typ =
   match msg with
-  | Variable(x) ->
+  | Variable((_, x)) ->
       Output.type_variable (Output.type_parameter x)
 
-  | Name(name, args) ->
+  | Name((_, name), args) ->
       let tys = args |> List.map generate_message_type in
       Output.type_name (Output.type_identifier name) tys
 
@@ -503,9 +503,9 @@ let rec generate_message_type (msg : message) : Output.typ =
       Output.record_type tyrcd
 
 
-let make_function_type params ty =
-  List.fold_right (fun param ty ->
-    let typaram = Output.type_parameter param in
+let make_function_type (params : (variable ranged) list) (ty : Output.typ) : Output.typ =
+  List.fold_right (fun (_, x) ty ->
+    let typaram = Output.type_parameter x in
     Output.function_type (Output.decoder_type (Output.type_variable typaram)) ty
   ) params (Output.decoder_type ty)
 
@@ -514,7 +514,7 @@ let generate_decoder (module_name : string) (decls : declarations) =
   let odecls =
     DeclMap.fold (fun name def acc ->
       let ovar = Output.global name in
-      let oparams = def.def_params |> List.map Output.local_for_parameter in
+      let oparams = def.def_params |> List.map (fun (_, x) -> Output.local_for_parameter x) in
       match def.def_main with
       | BuiltIn(builtin) ->
           let odecl = Output.built_in builtin in
@@ -522,7 +522,7 @@ let generate_decoder (module_name : string) (decls : declarations) =
 
       | GivenNormal(msg) ->
           let otyname = Output.type_identifier name in
-          let otyparam = def.def_params |> List.map Output.type_parameter in
+          let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
           let odecl_val =
             let tyargs = otyparam |> List.map Output.type_variable in
             let ty = make_function_type def.def_params (Output.type_name otyname tyargs) in
@@ -536,7 +536,7 @@ let generate_decoder (module_name : string) (decls : declarations) =
 
       | GivenVariant(variant) ->
           let otyname = Output.type_identifier name in
-          let otyparam = def.def_params |> List.map Output.type_parameter in
+          let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
           let odecl_type =
             let otymain =
               VariantMap.fold (fun ctor argmsgopt acc ->
