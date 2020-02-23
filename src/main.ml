@@ -25,20 +25,9 @@ let pp decls s =
   Format.printf "OUTPUT:@ @[%s@]" s
 
 
-let generate_decoder (dir_out : string) (decls : declarations) : unit =
-  let module_name = "APBufGenDecoder" in
-  let s = GenElm.generate_decoder module_name decls in
-  let path_out = Filename.concat dir_out (module_name ^ ".elm") in
-  Format.printf "writing output on '%s' ...\n" path_out;
-  let fout = open_out path_out in
-  output_string fout s;
-  close_out fout;
-  print_endline "done."
-
-
-let generate_encoder (dir_out : string) (decls : declarations) : unit =
-  let module_name = "APBufGenEncoder" in
-  let s = GenElm.generate_encoder module_name decls in
+let generate (dir_out : string) (decls : declarations) : unit =
+  let module_name = "APBufGen" in
+  let s = GenElm.generate module_name decls in
   let path_out = Filename.concat dir_out (module_name ^ ".elm") in
   Format.printf "writing output on '%s' ...\n" path_out;
   let fout = open_out path_out in
@@ -71,8 +60,7 @@ let main path_in =
           else
             dir
         in
-        generate_decoder dir_out decls;
-        generate_encoder dir_out decls;
+        generate dir_out decls;
         return ()
 
     | MetaOutput((_, other), _) ->
