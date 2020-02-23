@@ -21,11 +21,11 @@ module Output : sig
   val record : tree RecordMap.t -> tree
   val record_field_access : tree -> Types.key -> tree
   val branching : tree VariantMap.t -> tree
-  val global_decoder : Types.identifier -> identifier
-  val global_encoder : Types.identifier -> identifier
+  val global_decoder : Name.t -> identifier
+  val global_encoder : Name.t -> identifier
   val local_for_key : Types.key -> identifier
   val local_for_parameter : Types.variable -> identifier
-  val type_identifier : Types.identifier -> type_identifier
+  val type_identifier : Name.t -> type_identifier
   val type_parameter : Types.variable -> type_parameter
   val field_access : Types.key -> tree -> tree
   val access_argument : tree -> tree
@@ -144,10 +144,10 @@ end = struct
     }
 
   let global_decoder name =
-    Var("decode_" ^ name)
+    Var("decode" ^ Name.upper_camel_case name)
 
   let global_encoder name =
-    Var("encode_" ^ name)
+    Var("encode" ^ Name.upper_camel_case name)
 
   let local_for_key x =
     Var("local_key_" ^ x)
@@ -157,18 +157,18 @@ end = struct
 
   let type_identifier name =
     let s =
-      match name with
+      match Name.original name with
       | "bool"   -> "Bool"
       | "int"    -> "Int"
       | "string" -> "String"
       | "list"   -> "List"
       | "option" -> "Maybe"
-      | _        -> "T_" ^ name
+      | _        -> Name.upper_camel_case name
     in
     TypeIdentifier(s)
 
   let type_parameter x =
-    TypeParameter(x)
+    TypeParameter("typaram_" ^ x)
 
   let field_access (key : key) (otree : tree) : tree =
     Application{
@@ -413,11 +413,11 @@ end = struct
           (String.concat "\n" ss)
 
   let decoder_type ty =
-    TypeName(TypeIdentifier("Decoder"), [ty])
+    TypeName(TypeIdentifier("Json.Decode.Decoder"), [ty])
 
 
   let encoder_type ty =
-    FuncType(ty, TypeName(TypeIdentifier("Value"), []))
+    FuncType(ty, TypeName(TypeIdentifier("Json.Encode.Value"), []))
 
 
   let base s = (TypeName(type_identifier s, []))
@@ -429,24 +429,24 @@ end = struct
     match builtin with
     | BBool ->
         DefVal{
-          val_name   = global_decoder "bool";
-          typ        = dec (base "bool");
+          val_name   = global_decoder Name.bool;
+          typ        = dec (base Name.bool);
           parameters = [];
           body       = Identifier(Var("Json.Decode.bool"));
         }
 
     | BInt ->
         DefVal{
-          val_name   = global_decoder "int";
-          typ        = dec (base "int");
+          val_name   = global_decoder Name.int;
+          typ        = dec (base Name.int);
           parameters = [];
           body       = Identifier(Var("Json.Decode.int"));
         }
 
     | BString ->
         DefVal{
-          val_name   = global_decoder "string";
-          typ        = dec (base "string");
+          val_name   = global_decoder Name.string;
+          typ        = dec (base Name.string);
           parameters = [];
           body       = Identifier(Var("Json.Decode.string"));
         }
@@ -454,8 +454,8 @@ end = struct
     | BList(s) ->
         let typaram = type_parameter s in
         DefVal{
-          val_name   = global_decoder "list";
-          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier "list", [!$ typaram])));
+          val_name   = global_decoder Name.list;
+          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier Name.list, [!$ typaram])));
           parameters = [];
           body       = Identifier(Var("Json.Decode.list"));
         }
@@ -469,8 +469,8 @@ end = struct
         in
         let typaram = type_parameter s in
         DefVal{
-          val_name   = global_decoder "option";
-          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier "option", [!$ typaram])));
+          val_name   = global_decoder Name.option;
+          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier Name.option, [!$ typaram])));
           parameters = [ovar];
           body       = branching omap;
         }
@@ -492,24 +492,24 @@ end = struct
     match builtin with
     | BBool ->
         DefVal{
-          val_name   = global_encoder "bool";
-          typ        = enc (base "bool");
+          val_name   = global_encoder Name.bool;
+          typ        = enc (base Name.bool);
           parameters = [];
           body       = Identifier(Var("Json.Encode.bool"));
         }
 
     | BInt ->
         DefVal{
-          val_name   = global_encoder "int";
-          typ        = enc (base "int");
+          val_name   = global_encoder Name.int;
+          typ        = enc (base Name.int);
           parameters = [];
           body       = Identifier(Var("Json.Encode.int"));
         }
 
     | BString ->
         DefVal{
-          val_name   = global_encoder "string";
-          typ        = enc (base "string");
+          val_name   = global_encoder Name.string;
+          typ        = enc (base Name.string);
           parameters = [];
           body       = Identifier(Var("Json.Encode.string"));
         }
@@ -517,8 +517,8 @@ end = struct
     | BList(s) ->
         let typaram = type_parameter s in
         DefVal{
-          val_name   = global_encoder "list";
-          typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier "list", [!$ typaram])));
+          val_name   = global_encoder Name.list;
+          typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier Name.list, [!$ typaram])));
           parameters = [];
           body       = Identifier(Var("Json.Encode.list"));
         }
@@ -541,8 +541,8 @@ end = struct
             })
         in
         DefVal{
-          val_name   = global_encoder "option";
-          typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier "option", [!$ typaram])));
+          val_name   = global_encoder Name.option;
+          typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier Name.option, [!$ typaram])));
           parameters = [ ovar_param ];
           body       = body;
         }
@@ -580,7 +580,7 @@ let decoder_of_variable (x : variable) : Output.tree =
   Output.identifier (Output.local_for_parameter x)
 
 
-let rec decoder_of_name (name : identifier) (args : message list) : Output.tree =
+let rec decoder_of_name (name : Name.t) (args : message list) : Output.tree =
   let otrees = args |> List.map generate_message_decoder in
   Output.application (Output.global_decoder name) otrees
 
@@ -665,7 +665,7 @@ let encoder_of_variable (x : variable) : Output.tree =
   Output.identifier (Output.local_for_parameter x)
 
 
-let rec encoder_of_name (name : identifier) (args : message list) : Output.tree =
+let rec encoder_of_name (name : Name.t) (args : message list) : Output.tree =
   let otrees = args |> List.map generate_message_encoder in
   Output.application (Output.global_encoder name) otrees
 
@@ -760,7 +760,7 @@ let generate (module_name : string) (decls : declarations) =
   in
   List.append [
     Format.sprintf "module %s exposing (..)\n" module_name;
-    "import Json.Decode exposing (Decoder)\n";
-    "import Json.Encode exposing (Value)\n";
+    "import Json.Decode\n";
+    "import Json.Encode\n";
     "\n";
   ] sdecls |> String.concat ""

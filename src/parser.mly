@@ -6,8 +6,8 @@
 %token<Range.t> DEFEQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
 %token<Range.t> META_OUTPUT
 %token<Range.t * Types.variable> VARIABLE
-%token<Range.t * Types.identifier> IDENTIFIER
-%token<Range.t * Types.constructor> CONSTRUCTOR
+%token<Range.t * string> LOWER
+%token<Range.t * string> UPPER
 %token<Range.t * string> STRING
 
 %start toplevel
@@ -32,7 +32,7 @@ msgdecl:
   }
 ;
 msgname:
-| name=IDENTIFIER { name }
+| name=LOWER { name }
 ;
 params:
 |                                    { [] }
@@ -44,7 +44,7 @@ paramssub:
 | COMMA; x=VARIABLE; tail=paramssub { x :: tail }
 ;
 key:
-| key=IDENTIFIER { key }
+| key=LOWER { key }
 ;
 msg:
 | x=VARIABLE                      { PVariable(x) }
@@ -63,10 +63,10 @@ record:
 | key=key; COLON; msg=msg; COMMA; tail=record { (key, msg) :: tail }
 ;
 variant:
-| ctor=CONSTRUCTOR; COLON; msg=msg; tail=list(barvariant) { (ctor, Some(msg)) :: tail }
-| bv=barvariant; tail=list(barvariant)                    { bv :: tail }
+| ctor=UPPER; COLON; msg=msg; tail=list(barvariant) { (ctor, Some(msg)) :: tail }
+| bv=barvariant; tail=list(barvariant)              { bv :: tail }
 ;
 barvariant:
-| BAR; ctor=CONSTRUCTOR; COLON; msg=msg { (ctor, Some(msg)) }
-| BAR; ctor=CONSTRUCTOR;                { (ctor, None) }
+| BAR; ctor=UPPER; COLON; msg=msg { (ctor, Some(msg)) }
+| BAR; ctor=UPPER;                { (ctor, None) }
 ;

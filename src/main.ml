@@ -17,9 +17,9 @@ let pp decls s =
   decls |> DeclMap.iter (fun name def ->
     let params = def.def_params in
     match def.def_main with
-    | BuiltIn(_)       -> Format.printf "%s%a (built-in),@ " name pp_params params
-    | GivenNormal(msg) -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_params params pp_message msg
-    | GivenVariant(v)  -> Format.printf "%s%a@ :=@ @[%a@],@ " name pp_params params (pp_variant_map pp_message) v
+    | BuiltIn(_)       -> Format.printf "%a%a (built-in),@ " Name.pp name pp_params params
+    | GivenNormal(msg) -> Format.printf "%a%a@ :=@ @[%a@],@ " Name.pp name pp_params params pp_message msg
+    | GivenVariant(v)  -> Format.printf "%a%a@ :=@ @[%a@],@ " Name.pp name pp_params params (pp_variant_map pp_message) v
   );
   Format.printf "@]@,";
   Format.printf "OUTPUT:@ @[%s@]" s

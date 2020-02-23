@@ -2,9 +2,6 @@
 type 'a ranged = Range.t * 'a
 [@@deriving show { with_path = false; }]
 
-type identifier = string
-[@@deriving show { with_path = false; }]
-
 type variable = string
 [@@deriving show { with_path = false; }]
 
@@ -16,7 +13,7 @@ type constructor = string
 
 type parsed_message =
   | PVariable of variable ranged
-  | PName    of identifier ranged * parsed_message list
+  | PName    of string ranged * parsed_message list
   | PRecord  of (key ranged * parsed_message) list
 [@@deriving show { with_path = false; }]
 
@@ -40,7 +37,7 @@ type parsed_definition = {
   pdef_main   : parsed_definition_main;
 }
 
-type parsed_declarations = (identifier ranged * parsed_definition) list
+type parsed_declarations = (string ranged * parsed_definition) list
 
 type meta_spec =
   | MetaOutput of string ranged * string ranged
@@ -69,7 +66,7 @@ let pp_variant_map pp ppf variant =
 
 type message =
   | Variable of variable ranged
-  | Name     of identifier ranged * message list
+  | Name     of Name.t ranged * message list
   | Record   of message RecordMap.t
       [@printer (pp_record_map pp_message)]
 [@@deriving show { with_path = false; }]
@@ -78,7 +75,7 @@ type variant = (message option) VariantMap.t
   [@printer (pp_variant_map pp_message)]
 [@@deriving show { with_path = false; }]
 
-module DeclMap = Map.Make(String)
+module DeclMap = Map.Make(Name)
 
 type definition_main =
   | BuiltIn      of built_in
@@ -96,15 +93,16 @@ type error =
   | LexingInvalidCharacter         of { character : char; range : Range.t; }
   | EndOfLineInsideStringLiteral   of { start : Range.t; }
   | ParseErrorDetected             of { range : Range.t; }
+  | MalformedName                  of { raw : string; range : Range.t; }
   | UnsupportedTarget              of { target : string; }
-  | MessageNameDefinedMoreThanOnce of { name : identifier; range : Range.t; }
+  | MessageNameDefinedMoreThanOnce of { name : Name.t; range : Range.t; }
   | FieldDefinedMoreThanOnce       of { key : key; range : Range.t; }
   | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
-  | UndefinedMessageName           of { name : identifier; }
+  | UndefinedMessageName           of { name : Name.t; }
   | UndefinedVariable              of { variable : variable; range : Range.t; }
   | VariableBoundMoreThanOnce      of { variable : variable; }
   | InvalidMessageNameApplication of {
-      name           : identifier;
+      name           : Name.t;
       expected_arity : int;
       actual_arity   : int;
       range          : Range.t;
@@ -151,19 +149,27 @@ end = struct
 end
 
 
+let make_name ((rng, lower) : string ranged) : (Name.t ranged, error) result =
+  let open ResultMonad in
+  match Name.make lower with
+  | None       -> error (MalformedName{ raw = lower; range = rng; })
+  | Some(name) -> return (rng, name)
+
+
 let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   let open ResultMonad in
   match pmsg with
   | PVariable(x) ->
       return (Variable(x))
 
-  | PName(name, pargs) ->
+  | PName(rlower, pargs) ->
+      make_name rlower >>= fun rname ->
       pargs |> List.fold_left (fun res argpmsg ->
         res >>= fun acc ->
         normalize_message argpmsg >>= fun argmsg ->
         return (Alist.extend acc argmsg)
       ) (return Alist.empty) >>= fun acc ->
-      return (Name(name, acc |> Alist.to_list))
+      return (Name(rname, acc |> Alist.to_list))
 
   | PRecord(prcd) ->
       prcd |> List.fold_left (fun res ((rng, key), pmsgsub) ->
@@ -196,8 +202,9 @@ let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
 
 let normalize_declarations (pdecls : parsed_declarations) : (declarations, error) result =
   let open ResultMonad in
-  pdecls |> List.fold_left (fun res ((rng, name), pdef) ->
+  pdecls |> List.fold_left (fun res (rlower, pdef) ->
     res >>= fun declmap ->
+    make_name rlower >>= fun (rng, name) ->
     if declmap |> DeclMap.mem name then
       error (MessageNameDefinedMoreThanOnce{ name = name; range = rng; })
     else
@@ -219,7 +226,7 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
   ) (return DeclMap.empty)
 
 
-let rec validate_message (find_arity : identifier -> int option) (is_defined_variable : variable -> bool) (msg : message) : (unit, error) result =
+let rec validate_message (find_arity : Name.t -> int option) (is_defined_variable : variable -> bool) (msg : message) : (unit, error) result =
   let iter = validate_message find_arity is_defined_variable in
   let open ResultMonad in
   match msg with
@@ -258,7 +265,7 @@ let rec validate_message (find_arity : identifier -> int option) (is_defined_var
       ) rcd (return ())
 
 
-let validate_variant (find_arity : identifier -> int option) (is_defined_variable : variable -> bool) (variant : variant) : (unit, error) result =
+let validate_variant (find_arity : Name.t -> int option) (is_defined_variable : variable -> bool) (variant : variant) : (unit, error) result =
   let open ResultMonad in
   VariantMap.fold (fun _ctor argmsgopt res ->
     res >>= fun () ->
@@ -308,7 +315,7 @@ let validate_declarations (decls : declarations) : (unit, error) result =
 
 let built_in_declarations : parsed_declarations =
   let ( !@ ) t = (Range.dummy t, t) in
-  let ( ==> ) (x : identifier ranged) ((params, info) : (variable ranged) list * built_in) =
+  let ( ==> ) (x : string ranged) ((params, info) : (variable ranged) list * built_in) =
     (x, { pdef_params = params; pdef_main = PBuiltIn(info); })
   in
   [

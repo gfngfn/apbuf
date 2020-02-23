@@ -15,8 +15,8 @@ let break = ('\r' '\n' | '\r' | '\n')
 let capital = ['A'-'Z']
 let small = ['a'-'z']
 let digit = ['0'-'9']
-let identifier = (small (small | capital | digit | "_")*)
-let constructor = (capital (small | capital | digit | "_")*)
+let lower = (small (small | capital | digit | "_")*)
+let upper = (capital (small | capital | digit | "_")*)
 
 rule token = parse
 | space { token lexbuf }
@@ -29,15 +29,15 @@ rule token = parse
 | ")" { RPAREN(get_pos lexbuf) }
 | ":" { COLON(get_pos lexbuf) }
 | "," { COMMA(get_pos lexbuf) }
-| ("@" (identifier as s)) {
+| ("@" (lower as s)) {
     match s with
     | "output" -> META_OUTPUT(get_pos lexbuf)
     | _        -> failwith "error at lexer (1)"
   }
-| ("$" (identifier as x)) { VARIABLE(get_pos lexbuf, x) }
+| ("$" (lower as x)) { VARIABLE(get_pos lexbuf, x) }
 | "\"" { string (get_pos lexbuf) (Buffer.create 256) lexbuf }
-| identifier { IDENTIFIER(get_pos lexbuf, Lexing.lexeme lexbuf) }
-| constructor { CONSTRUCTOR(get_pos lexbuf, Lexing.lexeme lexbuf) }
+| lower { LOWER(get_pos lexbuf, Lexing.lexeme lexbuf) }
+| upper { UPPER(get_pos lexbuf, Lexing.lexeme lexbuf) }
 | eof { EOI }
 | _ as c { fail (LexingInvalidCharacter{ character = c; range = get_pos lexbuf }) }
 
