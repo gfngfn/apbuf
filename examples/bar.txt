@@ -1,15 +1,15 @@
 @output "elm": "./gen"
 
 geometry :=
-  | Rectangle : rectangle(int)
-  | Circle    : circle(int, rational)
+  | Rectangle : rectangle_info(int)
+  | Circle    : circle_info(int, rational)
 
-rectangle($num) := {
+rectangle_info($num) := {
   upper_left  : position($num),
   lower_right : position($num),
 }
 
-circle($cnum, $rnum) := {
+circle_info($cnum, $rnum) := {
   center : position($cnum),
   radius : $rnum,
 }
