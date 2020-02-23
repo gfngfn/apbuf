@@ -42,6 +42,11 @@ type parsed_definition = {
 
 type parsed_declarations = (identifier ranged * parsed_definition) list
 
+type meta_spec =
+  | MetaOutput of string ranged * string ranged
+
+type top_level = meta_spec * parsed_declarations
+
 module RecordMap = Map.Make(String)
 
 let pp_record_map pp ppf rcdmap =
@@ -88,6 +93,10 @@ type definition = {
 type declarations = definition DeclMap.t
 
 type error =
+  | LexingInvalidCharacter         of { character : char; range : Range.t; }
+  | EndOfLineInsideStringLiteral   of { start : Range.t; }
+  | ParseErrorDetected             of { range : Range.t; }
+  | UnsupportedTarget              of { target : string; }
   | MessageNameDefinedMoreThanOnce of { name : identifier; range : Range.t; }
   | FieldDefinedMoreThanOnce       of { key : key; range : Range.t; }
   | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
@@ -101,9 +110,6 @@ type error =
       range          : Range.t;
     }
 [@@deriving show { with_path = false; }]
-
-type meta_spec =
-  | MetaOutput of string ranged * string ranged
 
 module ResultMonad : sig
   val ( >>= ) : ('a, error) result -> ('a -> ('b, error) result) -> ('b, error) result

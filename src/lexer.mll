@@ -1,7 +1,13 @@
 {
+  open Types
   open Parser
 
+  exception LexingError of error
+
   let get_pos = Range.from_lexbuf
+
+  let fail (e : error) =
+    raise (LexingError(e))
 }
 
 let space = [' ' '\t']
@@ -33,14 +39,22 @@ rule token = parse
 | identifier { IDENTIFIER(get_pos lexbuf, Lexing.lexeme lexbuf) }
 | constructor { CONSTRUCTOR(get_pos lexbuf, Lexing.lexeme lexbuf) }
 | eof { EOI }
-| _ { failwith "error at lexer (2)" }
+| _ as c { fail (LexingInvalidCharacter{ character = c; range = get_pos lexbuf }) }
 
 and string start buf = parse
-| "\\\"" { Buffer.add_char buf '"'; string start buf lexbuf }
-| ([^ '\\' '"' '\r' '\n']+ as s) { Buffer.add_string buf s; string start buf lexbuf }
+| "\\\"" {
+    Buffer.add_char buf '"';
+    string start buf lexbuf
+  }
+| ([^ '\\' '"' '\r' '\n']+ as s) {
+    Buffer.add_string buf s;
+    string start buf lexbuf
+   }
 | '"' {
     let last = get_pos lexbuf in
     let s = Buffer.contents buf in
     STRING(Range.unite start last, s)
   }
-| (eof | '\r' | '\n') { failwith "error at lexer (3)" }
+| (eof | '\r' | '\n') {
+    fail (EndOfLineInsideStringLiteral{ start = start; })
+  }

@@ -35,19 +35,9 @@ let main path_in =
       path_in
   in
   let dir_in = Filename.dirname path_in in
-  let fin = open_in path_in in
   let res =
     let open ResultMonad in
-    let lexbuf =
-      let lexbuf = Lexing.from_channel fin in
-      let open Lexing in
-      lexbuf.lex_start_p <- { lexbuf.lex_start_p with pos_fname = path_in; };
-      lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = path_in; };
-      lexbuf
-    in
-    let (meta, pdecls) = Parser.toplevel Lexer.token lexbuf in
-      (* TODO: handle parse error *)
-    close_in fin;
+    ParserInterface.process path_in >>= fun (meta, pdecls) ->
     match meta with
     | MetaOutput((_, "elm"), (_, dir)) ->
         let dir_out =
@@ -63,12 +53,12 @@ let main path_in =
         let s = GenElm.generate_decoder module_name decls in
         return (Filename.concat dir_out (module_name ^ ".elm"), s)
 
-    | _ ->
-        failwith "not supported."
+    | MetaOutput((_, other), _) ->
+        error (UnsupportedTarget{ target = other; })
   in
   match res with
   | Ok((path_out, s)) ->
-      Format.printf "output written on '%s' ...\n" path_out;
+      Format.printf "writing output on '%s' ...\n" path_out;
       let fout = open_out path_out in
       output_string fout s;
       close_out fout;

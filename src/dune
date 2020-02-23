@@ -1,6 +1,6 @@
 (executable
   (name main)
-  (libraries cmdliner)
+  (libraries cmdliner menhirLib)
   (preprocess
     (pps ppx_deriving.show)))
 
@@ -8,4 +8,5 @@
   (modules lexer))
 
 (menhir
-  (modules parser))
+  (modules parser)
+  (flags --table --explain))

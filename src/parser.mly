@@ -11,7 +11,7 @@
 %token<Range.t * string> STRING
 
 %start toplevel
-%type<Types.meta_spec * Types.parsed_declarations> toplevel
+%type<Types.top_level> toplevel
 %type<(Range.t * Types.variable) list> params
 %type<Types.parsed_message list> argssub
 
