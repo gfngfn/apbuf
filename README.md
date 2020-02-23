@@ -50,13 +50,13 @@ type Geometry
 decodeGeometry : Decoder Geometry
 encodeGeometry : Geometry -> Value
 
-type alias CircleInfo c r = { center : Position c, radius : r }
-decodeCircleInfo : Decoder c -> Decoder r -> Decoder (CircleInfo c r)
-encodeCircleInfo : (c -> Value) -> (r -> Value) -> CircleInfo c r -> Value
-
 type alias RectangleInfo a = { lower_right : Position a, upper_left : Position a }
 decodeRectangleInfo : Decoder a -> Decoder (RectangleInfo a)
 encodeRectangleInfo : (a -> Value) -> RectangleInfo a -> Value
+
+type alias CircleInfo c r = { center : Position c, radius : r }
+decodeCircleInfo : Decoder c -> Decoder r -> Decoder (CircleInfo c r)
+encodeCircleInfo : (c -> Value) -> (r -> Value) -> CircleInfo c r -> Value
 
 type alias Position a = { x : a, y : a }
 decodePosition : Decoder a -> Decoder (Position a)
