@@ -12,10 +12,14 @@ module Output : sig
   type declaration
   val identifier : identifier -> tree
   val application : identifier -> tree list -> tree
+  val general_application : tree -> tree -> tree
   val abstraction : identifier -> tree -> tree
   val string_literal : string -> tree
   val constructor : Types.constructor -> tree
+  val tuple : tree list -> tree
+  val list : tree list -> tree
   val record : tree RecordMap.t -> tree
+  val record_field_access : tree -> Types.key -> tree
   val branching : tree VariantMap.t -> tree
   val global : Types.identifier -> identifier
   val local_for_key : Types.key -> identifier
@@ -27,6 +31,7 @@ module Output : sig
   val and_then : tree -> tree -> tree
   val map : tree -> tree -> tree
   val succeed : tree -> tree
+  val encode_dict : tree -> tree
   val stringify_declaration : declaration -> string
   val define_value : identifier -> typ -> identifier list -> tree -> declaration
   val built_in : built_in -> declaration
@@ -53,7 +58,7 @@ end = struct
   type tree =
     | Identifier of identifier
     | Application of {
-        applied   : identifier;
+        applied   : tree;
         arguments : tree list;
       }
     | Abstract of {
@@ -62,7 +67,13 @@ end = struct
       }
     | StringLiteral of string
     | Constructor of string
+    | Tuple of tree list
+    | List of tree list
     | Record of tree RecordMap.t
+    | FieldAccess of {
+        record : tree;
+        key    : string;
+      }
     | Case of {
         subject  : tree;
         branches : (pattern * tree) list;
@@ -103,7 +114,7 @@ end = struct
 
   let application ovar otrees =
     Application{
-      applied   = ovar;
+      applied   = Identifier(ovar);
       arguments = otrees;
     }
 
@@ -121,6 +132,12 @@ end = struct
 
   let record orcd =
     Record(orcd)
+
+  let record_field_access otree key =
+    FieldAccess{
+      record = otree;
+      key    = key;
+    }
 
   let global name =
     Var("decode_" ^ name)
@@ -148,31 +165,37 @@ end = struct
 
   let field_access (key : key) (otree : tree) : tree =
     Application{
-      applied   = Var("Json.Decode.field");
+      applied   = Identifier(Var("Json.Decode.field"));
       arguments = [ StringLiteral(key); otree; ];
     }
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
     Application{
-      applied   = Var("Json.Decode.andThen");
+      applied   = Identifier(Var("Json.Decode.andThen"));
       arguments = [ otree_cont; otree_dec; ];
     }
 
   let map (otree_map : tree) (otree_dec : tree) : tree =
     Application{
-      applied   = Var("Json.Decode.map");
+      applied   = Identifier(Var("Json.Decode.map"));
       arguments = [ otree_map; otree_dec; ];
     }
 
   let succeed (otree : tree) =
     Application{
-      applied   = Var("Json.Decode.succeed");
+      applied   = Identifier(Var("Json.Decode.succeed"));
       arguments = [ otree; ];
+    }
+
+  let encode_dict (otree : tree) =
+    Application{
+      applied   = Identifier(Var("Json.Encode.dict"));
+      arguments = [ otree ];
     }
 
   let access_argument (otree : tree) =
     Application{
-      applied = Var("Json.Decode.field");
+      applied = Identifier(Var("Json.Decode.field"));
       arguments = [ StringLiteral(argument_key); otree; ]
     }
 
@@ -191,7 +214,7 @@ end = struct
         let ovar_other = Var("other") in
         let otree_err =
           Application{
-            applied   = Var("Json.Decode.fail");
+            applied   = Identifier(Var("Json.Decode.fail"));
             arguments = [ Identifier(ovar_other) ];
           }
         in
@@ -206,6 +229,21 @@ end = struct
       }
     in
     and_then otree_cont otree_accesslabel
+
+
+  let general_application (otree1 : tree) (otree2 : tree) : tree =
+    Application{
+      applied   = otree1;
+      arguments = [ otree2 ];
+    }
+
+
+  let tuple otrees =
+    Tuple(otrees)
+
+
+  let list otrees =
+    List(otrees)
 
 
   let define_value ovar typ oparams otree =
@@ -231,7 +269,8 @@ end = struct
     | Identifier(Var(s)) ->
         s
 
-    | Application{ applied = Var(s); arguments = args; } ->
+    | Application{ applied = applied; arguments = args; } ->
+        let s = stringify_tree indent applied in
         begin
           match args with
           | [] ->
@@ -251,6 +290,14 @@ end = struct
     | Constructor(ctor) ->
         ctor
 
+    | Tuple(otrees) ->
+        let ss = otrees |> List.map (stringify_tree (indent + 1)) in
+        Format.sprintf "( %s )" (String.concat ", " ss)
+
+    | List(otrees) ->
+        let ss = otrees |> List.map (stringify_tree (indent + 1)) in
+        Format.sprintf "[ %s ]" (String.concat ", " ss)
+
     | Record(orcd) ->
         let ss =
           RecordMap.fold (fun key otree acc ->
@@ -259,6 +306,10 @@ end = struct
           ) orcd Alist.empty |> Alist.to_list
         in
         Format.sprintf "{ %s }" (String.concat ", " ss)
+
+    | FieldAccess{ record = otree_record; key = key; } ->
+        let s = stringify_tree indent otree_record in
+        Format.sprintf "%s.%s" s key
 
     | Case{ subject = otree_subject; branches = branches } ->
         let sindent = "\n" ^ String.make ((indent + 1) * 2) ' ' in
@@ -568,5 +619,66 @@ let generate_decoder (module_name : string) (decls : declarations) =
   List.append [
     Format.sprintf "module %s exposing (..)\n" module_name;
     "import Json.Decode exposing (Decoder)\n";
+    "\n";
+  ] sdecls |> String.concat ""
+
+
+let encoder_of_variable (x : variable) : Output.tree =
+  Output.identifier (Output.local_for_parameter x)
+
+
+let rec encoder_of_name (name : identifier) (args : message list) : Output.tree =
+  let otrees = args |> List.map generate_message_encoder in
+  Output.application (Output.global name) otrees
+
+
+and encoder_of_record (rcd : message RecordMap.t) : Output.tree =
+  let x_record = Output.local_for_parameter "temp" in
+  let otrees =
+    RecordMap.fold (fun key vmsg acc ->
+      let otree_encoder = generate_message_encoder vmsg in
+      let otree_encoded =
+        Output.general_application otree_encoder (Output.record_field_access (Output.identifier(x_record)) key)
+      in
+      let otree_pair = Output.tuple [ Output.string_literal key; otree_encoded ] in
+      Alist.extend acc otree_pair
+    ) rcd Alist.empty |> Alist.to_list
+  in
+  Output.abstraction x_record (Output.encode_dict (Output.list otrees))
+
+
+(** Given a message [msg] of type [T], [generate_message_encoder msg] generates
+    the code representation of encoder of type [T].
+    The return value is an representation of Elm code of type [T -> Value].
+  *)
+and generate_message_encoder (msg : message) : Output.tree =
+  match msg with
+  | Variable((_, x))      -> encoder_of_variable x
+  | Name((_, name), args) -> encoder_of_name name args
+  | Record(rcd)           -> encoder_of_record rcd
+
+
+let generate_encoder (module_name : string) (decls : declarations) =
+  let odecls =
+    DeclMap.fold (fun _name def acc ->
+      match def.def_main with
+      | BuiltIn(_builtin) ->
+          acc (* TODO *)
+
+      | GivenNormal(_msg) ->
+          acc (* TODO *)
+
+      | GivenVariant(_variant) ->
+          acc (* TODO *)
+    ) decls Alist.empty |> Alist.to_list
+  in
+  let sdecls =
+    odecls |> List.map (fun odecl ->
+      Output.stringify_declaration odecl ^ "\n\n"
+    )
+  in
+  List.append [
+    Format.sprintf "module %s exposing (..)\n" module_name;
+    "import Json.Encode\n";
     "\n";
   ] sdecls |> String.concat ""

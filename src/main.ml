@@ -25,6 +25,28 @@ let pp decls s =
   Format.printf "OUTPUT:@ @[%s@]" s
 
 
+let generate_decoder (dir_out : string) (decls : declarations) : unit =
+  let module_name = "APBufGenDecoder" in
+  let s = GenElm.generate_decoder module_name decls in
+  let path_out = Filename.concat dir_out (module_name ^ ".elm") in
+  Format.printf "writing output on '%s' ...\n" path_out;
+  let fout = open_out path_out in
+  output_string fout s;
+  close_out fout;
+  print_endline "done."
+
+
+let generate_encoder (dir_out : string) (decls : declarations) : unit =
+  let module_name = "APBufGenEncoder" in
+  let s = GenElm.generate_encoder module_name decls in
+  let path_out = Filename.concat dir_out (module_name ^ ".elm") in
+  Format.printf "writing output on '%s' ...\n" path_out;
+  let fout = open_out path_out in
+  output_string fout s;
+  close_out fout;
+  print_endline "done."
+
+
 (** This is the core part of the program.
     The parameter [path_in] stands for an input file path already confirmed to be existent. *)
 let main path_in =
@@ -38,31 +60,27 @@ let main path_in =
   let res =
     let open ResultMonad in
     ParserInterface.process path_in >>= fun (meta, pdecls) ->
+    let pdecls = List.append built_in_declarations pdecls in
+    normalize_declarations pdecls >>= fun decls ->
     match meta with
     | MetaOutput((_, "elm"), (_, dir)) ->
+        validate_declarations decls >>= fun () ->
         let dir_out =
           if Filename.is_relative dir then
             Filename.concat dir_in dir
           else
             dir
         in
-        let pdecls = List.append built_in_declarations pdecls in
-        normalize_declarations pdecls >>= fun decls ->
-        validate_declarations decls >>= fun () ->
-        let module_name = "APBufGen" in
-        let s = GenElm.generate_decoder module_name decls in
-        return (Filename.concat dir_out (module_name ^ ".elm"), s)
+        generate_decoder dir_out decls;
+        generate_encoder dir_out decls;
+        return ()
 
     | MetaOutput((_, other), _) ->
         error (UnsupportedTarget{ target = other; })
   in
   match res with
-  | Ok((path_out, s)) ->
-      Format.printf "writing output on '%s' ...\n" path_out;
-      let fout = open_out path_out in
-      output_string fout s;
-      close_out fout;
-      print_endline "done."
+  | Ok(()) ->
+      print_endline "finished."
 
   | Error(e) ->
       Format.printf "! Error:@ %a" pp_error e
