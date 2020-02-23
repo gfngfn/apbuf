@@ -33,6 +33,7 @@ module Output : sig
   val map : tree -> tree -> tree
   val succeed : tree -> tree
   val encode_record : tree -> tree
+  val encode_branching : (tree option) VariantMap.t -> tree
   val stringify_declaration : declaration -> string
   val define_value : identifier -> typ -> identifier list -> tree -> declaration
   val built_in_decoder : built_in -> declaration
@@ -412,6 +413,7 @@ end = struct
           (String.concat "" (otyparams |> List.map (fun (TypeParameter(a)) -> " " ^ a)))
           (String.concat "\n" ss)
 
+
   let decoder_type ty =
     TypeName(TypeIdentifier("Json.Decode.Decoder"), [ty])
 
@@ -475,16 +477,46 @@ end = struct
           body       = branching omap;
         }
 
+  let encode_variant (label : string) (argopt : tree option) : tree =
+    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
+    let otree_label_keyval = tuple [ string_literal label_key; otree_label ] in
+    let entries =
+      match argopt with
+      | None      -> [ otree_label_keyval ]
+      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal argument_key; arg ] ]
+    in
+    encode_record (list entries)
+
+  let encode_branching (variant : (tree option) VariantMap.t) : tree =
+    let ovar_toenc = Var("temp") in
+    let branches =
+      VariantMap.fold (fun ctor encopt acc ->
+        let ovar_toencsub = Var("sub") in
+        let (otreeopt, paramopt) =
+          match encopt with
+          | None ->
+              (None, None)
+
+          | Some(enc) ->
+              (Some(general_application enc (identifier ovar_toencsub)), Some(IdentifierPattern(ovar_toencsub)))
+        in
+        let pat = ConstructorPattern(ctor, paramopt) in
+        Alist.extend acc (pat, encode_variant ctor otreeopt)
+      ) variant Alist.empty |> Alist.to_list
+    in
+    Abstract{
+      variable = ovar_toenc;
+      body = Case{
+        subject  = Identifier(ovar_toenc);
+        branches = branches;
+      }
+    }
+
   let encoded_none : tree =
-    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal "None") in
-    encode_record (list [ tuple [ string_literal label_key; otree_label ] ])
+    encode_variant "None" None
 
   let encoded_some (otree_arg : tree) : tree =
-    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal "Some") in
-    encode_record (list [
-      tuple [ string_literal label_key; otree_label ];
-      tuple [ string_literal argument_key; otree_arg ];
-    ])
+    encode_variant "Some" (Some(otree_arg))
 
   let built_in_encoder (builtin : built_in) : declaration =
     let enc = encoder_type in
@@ -685,6 +717,17 @@ and encoder_of_record (rcd : message RecordMap.t) : Output.tree =
   Output.abstraction x_record (Output.encode_record (Output.list otrees))
 
 
+and encoder_of_variant (variant : (message option) VariantMap.t) : Output.tree =
+  let encmap =
+    variant |> VariantMap.map (fun msgopt ->
+      match msgopt with
+      | None      -> None
+      | Some(msg) -> Some(generate_message_encoder msg)
+    )
+  in
+  Output.encode_branching encmap
+
+
 (** Given a message [msg] of type [T], [generate_message_encoder msg] generates
     the code representation of encoder of type [T].
     The return value is an representation of Elm code of type [T -> Value].
@@ -714,16 +757,19 @@ let generate (module_name : string) (decls : declarations) =
           let odecl_type =
             Output.define_type_alias otyname otyparam (generate_message_type msg)
           in
-          let odecl_decoder =
+          let tyaliasmsg =
             let tyargs = otyparam |> List.map Output.type_variable in
-            let ty = make_decoder_function_type def.def_params (Output.type_name otyname tyargs) in
+            Output.type_name otyname tyargs
+          in
+          let odecl_decoder =
+            let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
             let otree = generate_message_decoder msg in
-            Output.define_value ovar_decoder ty oparams otree
+            Output.define_value ovar_decoder tyannot oparams otree
           in
           let odecl_encoder =
-            let ty = make_encoder_function_type def.def_params (generate_message_type msg) in
+            let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
             let otree_encoder = generate_message_encoder msg in
-            Output.define_value ovar_encoder ty oparams otree_encoder
+            Output.define_value ovar_encoder tyannot oparams otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ]
 
@@ -743,13 +789,21 @@ let generate (module_name : string) (decls : declarations) =
             in
             Output.define_data_type otyname otyparam otymain
           in
-          let odecl_decoder =
+          let tyaliasmsg =
             let tyargs = otyparam |> List.map Output.type_variable in
-            let ty = make_decoder_function_type def.def_params (Output.type_name otyname tyargs) in
-            let otree = decoder_of_variant variant in
-            Output.define_value ovar_decoder ty oparams otree
+            Output.type_name otyname tyargs
           in
-          Alist.append acc [ odecl_type; odecl_decoder; ]
+          let odecl_decoder =
+            let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
+            let otree = decoder_of_variant variant in
+            Output.define_value ovar_decoder tyannot oparams otree
+          in
+          let odecl_encoder =
+            let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
+            let otree = encoder_of_variant variant in
+            Output.define_value ovar_encoder tyannot oparams otree
+          in
+          Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ]
 
     ) decls Alist.empty |> Alist.to_list
   in

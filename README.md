@@ -8,7 +8,66 @@
 * Taget formats:
   - JSON
 * Target languages:
-  - Elm [WIP]
+  - Elm
+
+
+## Example
+
+The following configuration file:
+
+```
+@output "elm": "./gen"
+
+geometry :=
+  | Rectangle : rectangle_info(int)
+  | Circle    : circle_info(int, rational)
+
+rectangle_info($num) := {
+  upper_left  : position($num),
+  lower_right : position($num),
+}
+
+circle_info($cnum, $rnum) := {
+  center : position($cnum),
+  radius : $rnum,
+}
+
+position($num) := { x : $num, y : $num }
+
+rational := { numerator : int, denominator : int }
+```
+
+produces Elm code that has the following API:
+
+```elm
+module APBufGen exposing (..)
+import Json.Decode as D exposing (Decoder)
+import Json.Encode as E exposing (Value)
+
+type Geometry
+  = Circle (CircleInfo Int Rational)
+  | Rectangle (RectangleInfo Int)
+
+decodeGeometry : Decoder Geometry
+
+encodeGeometry : Geometry -> Value
+
+type alias CircleInfo c r = { center : Position c, radius : r }
+decodeCircleInfo : Decoder c -> Decoder r -> Decoder (CircleInfo c r)
+encodeCircleInfo : (c -> Value) -> (r -> Value) -> CircleInfo c r -> Value
+
+type alias RectangleInfo a = { lower_right : Position a, upper_left : Position a }
+decodeRectangleInfo : Decoder a -> Decoder (RectangleInfo a)
+encodeRectangleInfo : (a -> Value) -> RectangleInfo a -> Value
+
+type alias Position a = { x : a, y : a }
+decodePosition : Decoder a -> Decoder (Position a)
+encodePosition : (a -> Value) -> { x : a, y : a } -> Value
+
+type alias Rational = { denominator : Int, numerator : Int }
+decodeRational : Decoder Rational
+encodeRational : Rational -> Value
+```
 
 
 ## Syntax of configuration files
