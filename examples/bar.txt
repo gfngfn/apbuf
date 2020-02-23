@@ -1,0 +1,19 @@
+@output "elm": "./gen"
+
+geometry :=
+  | Rectangle : rectangle(int)
+  | Circle    : circle(int, rational)
+
+rectangle($num) := {
+  upper_left  : position($num),
+  lower_right : position($num),
+}
+
+circle($cnum, $rnum) := {
+  center : position($cnum),
+  radius : $rnum,
+}
+
+position($num) := { x : $num, y : $num }
+
+rational := { numerator : int, denominator : int }
