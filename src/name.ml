@@ -3,6 +3,28 @@ type t = {
   fragments : string list;
   original  : string;
 }
+(* `Name.t` is a module that abstracts identifiers
+    in order to handle message names in a cross-language manner.
+
+    Every fragment should be a non-empty string consisting only of lowercase letters and digits.
+
+    `Name.make s` converts ab original identifier string `s` into its corresponding list of word fragments:
+
+    ```
+    Name.make "foo_bar"  ==> Some{ fragments = ["foo"; "bar"]; ... }
+    Name.make "foo_Bar"  ==> None
+    Name.make "foo__bar" ==> None
+    Name.make "foo_bar_" ==> None
+    Name.make "x86_64"   ==> Some{ fragments = ["x86"; "64"]; ... }
+    ```
+
+    `Name.upper_camel_case name` outputs `name` in upper camel case
+    (with inserting underscores before every fragment that begins with a digit):
+
+    ```
+    Name.upper_camel_case { fragments = ["foo"; "bar"]; ... } ==> "FooBar"
+    Name.upper_camel_case { fragments = ["x86"; "64"]; ... } ==> "X86_64"
+*)
 
 let is_digit ch =
   let n = Char.code ch in
@@ -23,7 +45,7 @@ let make (original : string) : t option =
 
 let make_exn (original : string) : t =
   let fragments = String.split_on_char '_' original in
-  if is_valid fragments then { fragments; original; } else raise (Invalid_argument("Name.force"))
+  if is_valid fragments then { fragments; original; } else raise (Invalid_argument("Name.make_exn"))
 
 
 let original (name : t) : string =
