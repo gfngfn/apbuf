@@ -1,11 +1,19 @@
 
+module Key : sig
+  type t
+  val pp : Format.formatter -> t -> unit
+  val compare : t -> t -> int
+  val make : string -> t option
+  val snake_case : t -> string
+  val lower_camel_case : t -> string
+end = struct
+  include Name
+end
+
 type 'a ranged = Range.t * 'a
 [@@deriving show { with_path = false; }]
 
 type variable = string
-[@@deriving show { with_path = false; }]
-
-type key = string
 [@@deriving show { with_path = false; }]
 
 type constructor = string
@@ -14,7 +22,7 @@ type constructor = string
 type parsed_message =
   | PVariable of variable ranged
   | PName    of string ranged * parsed_message list
-  | PRecord  of (key ranged * parsed_message) list
+  | PRecord  of (string ranged * parsed_message) list
 [@@deriving show { with_path = false; }]
 
 type parsed_variant = (constructor ranged * parsed_message option) list
@@ -44,12 +52,12 @@ type meta_spec =
 
 type top_level = meta_spec * parsed_declarations
 
-module RecordMap = Map.Make(String)
+module RecordMap = Map.Make(Key)
 
 let pp_record_map pp ppf rcdmap =
   Format.fprintf ppf "@[<hov2>*R{@ ";
   rcdmap |> RecordMap.iter (fun k v ->
-    Format.fprintf ppf "%s ->@ @[<hov2>%a@],@ " k pp v
+    Format.fprintf ppf "%a ->@ @[<hov2>%a@],@ " Key.pp k pp v
   );
   Format.fprintf ppf "@]}"
 
@@ -94,9 +102,10 @@ type error =
   | EndOfLineInsideStringLiteral   of { start : Range.t; }
   | ParseErrorDetected             of { range : Range.t; }
   | MalformedName                  of { raw : string; range : Range.t; }
+  | MalformedKey                   of { raw : string; range : Range.t; }
   | UnsupportedTarget              of { target : string; }
   | MessageNameDefinedMoreThanOnce of { name : Name.t; range : Range.t; }
-  | FieldDefinedMoreThanOnce       of { key : key; range : Range.t; }
+  | FieldDefinedMoreThanOnce       of { key : Key.t; range : Range.t; }
   | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
   | UndefinedMessageName           of { name : Name.t; }
   | UndefinedVariable              of { variable : variable; range : Range.t; }
@@ -156,6 +165,13 @@ let make_name ((rng, lower) : string ranged) : (Name.t ranged, error) result =
   | Some(name) -> return (rng, name)
 
 
+let make_key ((rng, lower) : string ranged) : (Key.t ranged, error) result =
+  let open ResultMonad in
+  match Key.make lower with
+  | None      -> error (MalformedKey{ raw = lower; range = rng; })
+  | Some(key) -> return (rng, key)
+
+
 let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   let open ResultMonad in
   match pmsg with
@@ -172,8 +188,9 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
       return (Name(rname, acc |> Alist.to_list))
 
   | PRecord(prcd) ->
-      prcd |> List.fold_left (fun res ((rng, key), pmsgsub) ->
+      prcd |> List.fold_left (fun res (rlower, pmsgsub) ->
         res >>= fun rcdmap ->
+        make_key rlower >>= fun (rng, key) ->
         if rcdmap |> RecordMap.mem key then
           error (FieldDefinedMoreThanOnce{ key = key; range = rng; })
         else

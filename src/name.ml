@@ -56,22 +56,33 @@ let snake_case (name : t) : string =
   name.fragments |> String.concat "_"
 
 
-let upper_camel_case (name : t) : string =
-  let rec aux acc = function
+let capitalize (is_lower_first : bool) (fragment : string) =
+  if is_lower_first then
+    fragment
+  else
+    String.capitalize_ascii fragment
+
+
+let camel_case (is_lower : bool) (name : t) : string =
+  let rec aux is_lower_first acc = function
     | [] ->
         List.rev acc
 
     | x :: [] ->
-        List.rev (String.capitalize_ascii x :: acc)
+        List.rev (capitalize is_lower_first x :: acc)
 
     | x :: ((y :: _) as rest) ->
-        let xcap = String.capitalize_ascii x in
+        let xcap = capitalize is_lower_first x in
         if is_digit (String.get y 0) then
-          aux ((xcap ^ "_") :: acc) rest
+          aux false ((xcap ^ "_") :: acc) rest
         else
-          aux (xcap :: acc) rest
+          aux false (xcap :: acc) rest
   in
-  aux [] name.fragments |> String.concat ""
+  aux is_lower [] name.fragments |> String.concat ""
+
+
+let lower_camel_case = camel_case true
+let upper_camel_case = camel_case false
 
 
 let pp ppf name =

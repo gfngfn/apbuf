@@ -19,15 +19,15 @@ module Output : sig
   val tuple : tree list -> tree
   val list : tree list -> tree
   val record : tree RecordMap.t -> tree
-  val record_field_access : tree -> Types.key -> tree
+  val record_field_access : tree -> Key.t -> tree
   val branching : tree VariantMap.t -> tree
   val global_decoder : Name.t -> identifier
   val global_encoder : Name.t -> identifier
-  val local_for_key : Types.key -> identifier
+  val local_for_key : Key.t -> identifier
   val local_for_parameter : Types.variable -> identifier
   val type_identifier : Name.t -> type_identifier
   val type_parameter : Types.variable -> type_parameter
-  val field_access : Types.key -> tree -> tree
+  val decode_field_access : Key.t -> tree -> tree
   val access_argument : tree -> tree
   val and_then : tree -> tree -> tree
   val map : tree -> tree -> tree
@@ -40,7 +40,7 @@ module Output : sig
   val built_in_encoder : built_in -> declaration
   val type_name : type_identifier -> typ list -> typ
   val type_variable : type_parameter -> typ
-  val record_type : (Types.key * typ) list -> typ
+  val record_type : (Key.t * typ) list -> typ
   val function_type : typ -> typ -> typ
   val decoder_type : typ -> typ
   val encoder_type : typ -> typ
@@ -94,7 +94,7 @@ end = struct
     | TypeName     of type_identifier * typ list
     | TypeVariable of type_parameter
     | FuncType     of typ * typ
-    | RecordType   of (Types.key * typ) list
+    | RecordType   of (Key.t * typ) list
 
   type declaration =
     | DefVal of {
@@ -139,9 +139,10 @@ end = struct
     Record(orcd)
 
   let record_field_access otree key =
+    let skey = Key.lower_camel_case key in
     FieldAccess{
       record = otree;
-      key    = key;
+      key    = skey;
     }
 
   let global_decoder name =
@@ -150,8 +151,9 @@ end = struct
   let global_encoder name =
     Var("encode" ^ Name.upper_camel_case name)
 
-  let local_for_key x =
-    Var("local_key_" ^ x)
+  let local_for_key key =
+    let s = Key.snake_case key in
+    Var("local_key_" ^ s)
 
   let local_for_parameter x =
     Var("local_param_" ^ x)
@@ -171,11 +173,14 @@ end = struct
   let type_parameter x =
     TypeParameter("typaram_" ^ x)
 
-  let field_access (key : key) (otree : tree) : tree =
+  let decode_field_access_raw (skey : string) (otree : tree) : tree =
     Application{
       applied   = Identifier(Var("Json.Decode.field"));
-      arguments = [ StringLiteral(key); otree; ];
+      arguments = [ StringLiteral(skey); otree; ];
     }
+
+  let decode_field_access (key : Key.t) (otree : tree) : tree =
+    decode_field_access_raw (Key.lower_camel_case key) otree
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
     Application{
@@ -209,7 +214,7 @@ end = struct
 
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
-      field_access label_key (Identifier(Var("Json.Decode.string")))
+      decode_field_access_raw label_key (Identifier(Var("Json.Decode.string")))
     in
     let otree_cont =
       let ovar_temp = Var("temp") in
@@ -316,15 +321,15 @@ end = struct
     | Record(orcd) ->
         let ss =
           RecordMap.fold (fun key otree acc ->
-            let s = Format.sprintf "%s = %s" key (stringify_tree (indent + 1) otree) in
+            let s = Format.sprintf "%s = %s" (Key.lower_camel_case key) (stringify_tree (indent + 1) otree) in
             Alist.extend acc s
           ) orcd Alist.empty |> Alist.to_list
         in
         Format.sprintf "{ %s }" (String.concat ", " ss)
 
-    | FieldAccess{ record = otree_record; key = key; } ->
+    | FieldAccess{ record = otree_record; key = skey; } ->
         let s = stringify_tree indent otree_record in
-        Format.sprintf "%s.%s" s key
+        Format.sprintf "%s.%s" s skey
 
     | Case{ subject = otree_subject; branches = branches } ->
         let sindent = "\n" ^ String.make ((indent + 1) * 2) ' ' in
@@ -360,7 +365,7 @@ end = struct
     | RecordType(tyrcd) ->
         let sr =
           tyrcd |> List.map (fun (key, ty) ->
-            Format.sprintf "%s : %s" key (stringify_type ty)
+            Format.sprintf "%s : %s" (Key.lower_camel_case key) (stringify_type ty)
           ) |> String.concat ", "
         in
         Format.sprintf "{ %s }" sr
@@ -585,7 +590,7 @@ end = struct
   let type_variable (tp : type_parameter) : typ =
     TypeVariable(tp)
 
-  let record_type (tyrcd : (Types.key * typ) list) : typ =
+  let record_type (tyrcd : (Key.t * typ) list) : typ =
     RecordType(tyrcd)
 
   let function_type (ty1 : typ) (ty2 : typ) : typ =
@@ -629,7 +634,7 @@ and decoder_of_record (rcd : message RecordMap.t) : Output.tree =
   let acc =
     RecordMap.fold (fun key vmsg acc ->
       let otree_decv = generate_message_decoder vmsg in
-      let otree_accessk = Output.field_access key otree_decv in
+      let otree_accessk = Output.decode_field_access key otree_decv in
       Alist.extend acc (key, otree_accessk)
     ) rcd Alist.empty
   in
@@ -710,7 +715,7 @@ and encoder_of_record (rcd : message RecordMap.t) : Output.tree =
       let otree_encoded =
         Output.general_application otree_encoder (Output.record_field_access (Output.identifier(x_record)) key)
       in
-      let otree_pair = Output.tuple [ Output.string_literal key; otree_encoded ] in
+      let otree_pair = Output.tuple [ Output.string_literal (Key.lower_camel_case key); otree_encoded ] in
       Alist.extend acc otree_pair
     ) rcd Alist.empty |> Alist.to_list
   in

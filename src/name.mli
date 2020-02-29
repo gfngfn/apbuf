@@ -7,6 +7,8 @@ val original : t -> string
 
 val snake_case : t -> string
 
+val lower_camel_case : t -> string
+
 val upper_camel_case : t -> string
 
 val pp : Format.formatter -> t -> unit
