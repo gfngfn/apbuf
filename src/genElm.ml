@@ -5,6 +5,7 @@ open Types
 module Output : sig
 
   type identifier
+  type identifier_hint
   type tree
   type type_identifier
   type type_parameter
@@ -13,7 +14,7 @@ module Output : sig
   val identifier : identifier -> tree
   val application : identifier -> tree list -> tree
   val general_application : tree -> tree -> tree
-  val abstraction : identifier -> tree -> tree
+  val abstraction : identifier_hint -> (identifier -> tree) -> tree
   val string_literal : string -> tree
   val constructor : Types.constructor -> tree
   val tuple : tree list -> tree
@@ -23,8 +24,8 @@ module Output : sig
   val branching : tree VariantMap.t -> tree
   val global_decoder : Name.t -> identifier
   val global_encoder : Name.t -> identifier
-  val local_for_key : Types.key -> identifier
-  val local_for_parameter : Types.variable -> identifier
+  val local_for_key : Types.key -> identifier_hint
+  val local_for_parameter : Types.variable -> identifier_hint
   val type_identifier : Name.t -> type_identifier
   val type_parameter : Types.variable -> type_parameter
   val field_access : Types.key -> tree -> tree
@@ -55,6 +56,8 @@ end = struct
   type identifier =
     | Var of string
 
+  type identifier_hint = identifier
+
   type pattern =
     | StringPattern of string
     | ConstructorPattern of constructor * pattern option
@@ -66,7 +69,7 @@ end = struct
         applied   : tree;
         arguments : tree list;
       }
-    | Abstract of {
+    | Abstraction of {
         variable : identifier;
         body     : tree;
       }
@@ -123,8 +126,9 @@ end = struct
       arguments = otrees;
     }
 
-  let abstraction ovar otree =
-    Abstract{
+  let abstraction ovar otreef =
+    let otree = otreef ovar in
+    Abstraction{
       variable = ovar;
       body     = otree;
     }
@@ -228,7 +232,7 @@ end = struct
         in
         Alist.extend acc (IdentifierPattern(ovar_other), otree_err) |> Alist.to_list
       in
-      Abstract{
+      Abstraction{
         variable = ovar_temp;
         body = Case{
           subject  = Identifier(ovar_temp);
@@ -296,7 +300,7 @@ end = struct
               Format.sprintf "(%s %s)" s (String.concat " " sargs)
         end
 
-    | Abstract{ variable = Var(s); body = body; } ->
+    | Abstraction{ variable = Var(s); body = body; } ->
         Format.sprintf "(\\%s -> %s)" s (stringify_tree (indent + 1) body)
 
     | StringLiteral(s) ->
@@ -504,7 +508,7 @@ end = struct
         Alist.extend acc (pat, encode_variant ctor otreeopt)
       ) variant Alist.empty |> Alist.to_list
     in
-    Abstract{
+    Abstraction{
       variable = ovar_toenc;
       body = Case{
         subject  = Identifier(ovar_toenc);
@@ -560,9 +564,9 @@ end = struct
         let ovar_toenc = Var("opt") in
         let ovar_toencsub = Var("sub") in
         let typaram = type_parameter s in
-        let body =
-          abstraction ovar_toenc
-            (Case{
+        let defbody =
+          let absbody =
+            Case{
               subject  = Identifier(ovar_toenc);
               branches = [
                 (ConstructorPattern("Nothing", None),
@@ -570,13 +574,18 @@ end = struct
                 (ConstructorPattern("Just", Some(IdentifierPattern(ovar_toencsub))),
                    encoded_some (general_application (Identifier(ovar_param)) (Identifier(ovar_toencsub))));
               ];
-            })
+            }
+          in
+          Abstraction{
+            variable = ovar_toenc;
+            body     = absbody;
+          }
         in
         DefVal{
           val_name   = global_encoder Name.option;
           typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier Name.option, [!$ typaram])));
           parameters = [ ovar_param ];
-          body       = body;
+          body       = defbody;
         }
 
   let type_name (ti : type_identifier) (tyargs : typ list) : typ =
