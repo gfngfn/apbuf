@@ -52,7 +52,7 @@ type Geometry
 decodeGeometry : Decoder Geometry
 encodeGeometry : Geometry -> Value
 
-type alias RectangleInfo a = { lower_right : Position a, upper_left : Position a }
+type alias RectangleInfo a = { lowerRight : Position a, upperLeft : Position a }
 decodeRectangleInfo : Decoder a -> Decoder (RectangleInfo a)
 encodeRectangleInfo : (a -> Value) -> RectangleInfo a -> Value
 
