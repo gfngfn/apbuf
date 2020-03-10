@@ -93,7 +93,7 @@ let rec generate_message_decoder (msg : message) : Output.tree =
       Output.make_record_reads entries
 
 
-let generate (package_name : string) (decls : declarations) =
+let generate (module_name : string) (package_name : string) (decls : declarations) =
   let odecls : Output.declaration list =
     DeclMap.fold (fun _name def acc ->
       match def.def_main with
@@ -104,14 +104,21 @@ let generate (package_name : string) (decls : declarations) =
   in
   let sdecls =
     odecls |> List.map (fun odecl ->
-      Output.stringify_declaration odecl ^ "\n\n"
+      "  " ^ Output.stringify_declaration odecl ^ "\n\n"
     )
   in
-  List.append [
-    Format.sprintf "package %s\n" package_name;
-    "\n";
-    "import play.api.libs.json._\n";
-    "import play.api.libs.json.Reads._\n";
-    "import play.api.libs.functional.syntax._\n";
-    "\n";
-  ] sdecls |> String.concat ""
+  List.concat [
+    [
+      Format.sprintf "package %s\n" package_name;
+      "\n";
+      "import play.api.libs.json._\n";
+      "import play.api.libs.json.Reads._\n";
+      "import play.api.libs.functional.syntax._\n";
+      "\n";
+      Format.sprintf "object %s {\n" module_name;
+    ];
+    sdecls;
+    [
+      "}\n";
+    ];
+  ] |> String.concat ""
