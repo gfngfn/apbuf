@@ -6,13 +6,17 @@ module Output : sig
   type identifier
   val local_for_parameter : Types.variable -> identifier
   val global_reads : Name.t -> identifier
+  type type_identifier
+  val type_identifier : Name.t -> type_identifier
+  type type_parameter
+  val type_parameter : Types.variable -> type_parameter
+  type typ
+  val type_variable : type_parameter -> typ
+  val type_name : type_identifier -> typ list -> typ
   type tree
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
-  val make_record_reads : (Key.t * tree) list -> tree
-  type type_identifier
-  type type_parameter
-  type typ
+  val make_record_reads : (Key.t * typ * tree) list -> tree
   type declaration
   val stringify_declaration : declaration -> string
 end = struct
@@ -26,6 +30,29 @@ end = struct
   let local_for_parameter x =
     Var("local_param_" ^ x)
 
+  type type_identifier =
+    | TypeIdentifier of string
+
+  let type_identifier (name : Name.t) =
+    TypeIdentifier(Name.upper_camel_case name)
+
+  type type_parameter =
+    | TypeParameter of string
+
+  let type_parameter (x : Types.variable) =
+    TypeParameter(x)
+
+  type typ =
+    | TypeName     of type_identifier * typ list
+    | TypeVariable of type_parameter
+    | FuncType     of typ * typ
+
+  let type_variable tv =
+    TypeVariable(tv)
+
+  let type_name tyident typs =
+    TypeName(tyident, typs)
+
   type tree =
     | Identifier of identifier
     | Application of {
@@ -33,7 +60,7 @@ end = struct
         arguments : tree list;
       }
     | RecordReads of {
-        fields : (Key.t * tree) list;
+        fields : (Key.t * typ * tree) list;
       }
 
   let identifier ident =
@@ -44,15 +71,6 @@ end = struct
 
   let make_record_reads fields =
     RecordReads{ fields = fields; }
-
-  type type_identifier = unit
-
-  type type_parameter = unit
-
-  type typ =
-    | TypeName     of type_identifier * typ list
-    | TypeVariable of type_parameter
-    | FuncType     of typ * typ
 
   type declaration =
     | DefCaseClass of {
@@ -73,6 +91,18 @@ end = struct
 end
 
 
+let rec generate_message_type (msg : message) : Output.typ =
+  match msg with
+  | Variable((_, x)) ->
+      Output.type_variable (Output.type_parameter x)
+
+  | Name((_, name), args) ->
+      let typs = args |> List.map generate_message_type in
+      Output.type_name (Output.type_identifier name) typs
+
+  | Record(_rcd) ->
+      failwith "not implemented yet."
+
 
 let rec generate_message_decoder (msg : message) : Output.tree =
   match msg with
@@ -87,7 +117,8 @@ let rec generate_message_decoder (msg : message) : Output.tree =
       let entries =
         RecordMap.fold (fun key vmsg acc ->
           let otree = generate_message_decoder vmsg in
-          Alist.extend acc (key, otree)
+          let typ = generate_message_type vmsg in
+          Alist.extend acc (key, typ, otree)
         ) rcd Alist.empty |> Alist.to_list
       in
       Output.make_record_reads entries
