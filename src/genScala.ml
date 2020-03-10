@@ -4,18 +4,72 @@ open Types
 
 module Output : sig
   type identifier
+  val local_for_parameter : Types.variable -> identifier
+  val global_reads : Name.t -> identifier
   type tree
+  val identifier : identifier -> tree
+  val application : tree -> tree list -> tree
+  val make_record_reads : (Key.t * tree) list -> tree
   type type_identifier
   type type_parameter
   type typ
   type declaration
-  val local_for_parameter : Types.variable -> identifier
-  val global_reads : Name.t -> identifier
-  val identifier : identifier -> tree
-  val application : tree -> tree list -> tree
-  val make_record_reads : (Key.t * tree) list -> tree
   val stringify_declaration : declaration -> string
 end = struct
+
+  type identifier =
+    | Var of string
+
+  let global_reads name =
+    Var(Name.lower_camel_case name ^ "Reads")
+
+  let local_for_parameter x =
+    Var("local_param_" ^ x)
+
+  type tree =
+    | Identifier of identifier
+    | Application of {
+        applied   : tree;
+        arguments : tree list;
+      }
+    | RecordReads of {
+        fields : (Key.t * tree) list;
+      }
+
+  let identifier ident =
+    Identifier(ident)
+
+  let application ot ots =
+    Application{ applied = ot; arguments = ots; }
+
+  let make_record_reads fields =
+    RecordReads{ fields = fields; }
+
+  type type_identifier = unit
+
+  type type_parameter = unit
+
+  type typ =
+    | TypeName     of type_identifier * typ list
+    | TypeVariable of type_parameter
+    | FuncType     of typ * typ
+
+  type declaration =
+    | DefCaseClass of {
+        type_name    : type_identifier;
+        type_params  : type_parameter list;
+        constructors : (string * typ) list;
+      }
+    | DefVal of {
+        val_name : identifier;
+        typ      : typ;
+        params   : identifier list;
+        body     : tree;
+      }
+
+  let stringify_declaration _odecl =
+    "" (* TODO *)
+
 end
 
 
