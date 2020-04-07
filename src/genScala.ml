@@ -13,11 +13,14 @@ module Output : sig
   type typ
   val type_variable : type_parameter -> typ
   val type_name : type_identifier -> typ list -> typ
+  val func_type : typ -> typ -> typ
   type tree
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
   val make_record_reads : (Key.t * typ * tree) list -> tree
   type declaration
+  val define_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
+  val define_value : identifier -> typ -> identifier list -> tree -> declaration
   val stringify_declaration : declaration -> string
 end = struct
 
@@ -53,6 +56,22 @@ end = struct
   let type_name tyident typs =
     TypeName(tyident, typs)
 
+  let func_type oty1 oty2 =
+    FuncType(oty1, oty2)
+
+  let rec stringify_type (oty : typ) =
+    match oty with
+    | TypeName(TypeIdentifier(tynm), tyargs) ->
+        Printf.sprintf "%s[%s]" tynm (tyargs |> List.map stringify_type |> String.concat ", ")
+
+    | TypeVariable(TypeParameter(x)) ->
+        x
+
+    | FuncType(oty1, oty2) ->
+        let sty1 = stringify_type oty1 in
+        let sty2 = stringify_type oty2 in
+        Printf.sprintf "(%s) => %s" sty1 sty2
+
   type tree =
     | Identifier of identifier
     | Application of {
@@ -85,8 +104,47 @@ end = struct
         body     : tree;
       }
 
-  let stringify_declaration _odecl =
-    "" (* TODO *)
+  let define_case_class tyid typarams ctors =
+    DefCaseClass{
+      type_name    = tyid;
+      type_params  = typarams;
+      constructors = ctors;
+    }
+
+  let define_value ident oty params otree =
+    DefVal{
+      val_name = ident;
+      typ      = oty;
+      params   = params;
+      body     = otree;
+    }
+
+  let stringify_declaration (odecl : declaration) =
+    match odecl with
+    | DefCaseClass{
+        type_name    = TypeIdentifier(tynm);
+        type_params  = otyparams;
+        constructors = ctors;
+      } ->
+        let styparams = otyparams |> List.map (function TypeParameter(s) -> s) in
+        let paramseq = String.concat ", " styparams in
+        let smain = Printf.sprintf "%s[%s]" tynm paramseq in
+        let sctors =
+          ctors |> List.map (fun (ctornm, ty) ->
+            let sty = stringify_type ty in
+            Printf.sprintf "case class %s[%s](arg: %s) extends %s\n" ctornm paramseq sty smain
+          )
+        in
+        (Printf.sprintf "sealed trait %s\n" smain) :: sctors
+        |> String.concat ""
+
+    | DefVal{
+        val_name = Var(_varnm);
+        typ      = _oty;
+        params   = _params;
+        body     = _otree;
+      } ->
+        "" (* TODO *)
 
 end
 
