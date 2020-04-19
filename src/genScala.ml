@@ -119,6 +119,19 @@ end = struct
       body     = otree;
     }
 
+  let rec stringify_tree (otree : tree) =
+    match otree with
+    | Identifier(Var(varnm)) ->
+        varnm
+
+    | Application{ applied = otfun; arguments = otargs; } ->
+        let sfun = stringify_tree otfun in
+        let sargs = otargs |> List.map stringify_tree in
+        Printf.sprintf "%s(%s)" sfun (String.concat ", " sargs)
+
+    | RecordReads{ fields = _fields; } ->
+        "(record)" (* TODO *)
+
   let stringify_declaration (odecl : declaration) =
     match odecl with
     | DefCaseClass{
@@ -139,12 +152,15 @@ end = struct
         |> String.concat ""
 
     | DefVal{
-        val_name = Var(_varnm);
+        val_name = Var(varnm);
         typ      = _oty;
-        params   = _params;
-        body     = _otree;
+        params   = params;
+        body     = otree;
       } ->
-        "" (* TODO *)
+        let sparams = params |> List.map (function Var(s) -> s) in
+        let paramseq = String.concat ", " sparams in
+        let sbody = stringify_tree otree in
+        Printf.sprintf "def %s(%s) = { %s }\n" varnm paramseq sbody
 
 end
 
