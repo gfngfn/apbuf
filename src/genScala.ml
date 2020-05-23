@@ -244,13 +244,6 @@ let generate (module_name : string) (package_name : string) (decls : declaration
           failwith "TODO: generate, BuiltIn"
 
       | GivenNormal(msg) ->
-          let _ovar_writes = Output.global_writes name in
-          let ovtparams =
-            def.def_params |> List.map (fun (_, x) ->
-              let otyparam = Output.type_parameter x in
-              (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
-            )
-          in
           let otyname = Output.type_identifier name in
           let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
           let odecl_type : Output.declaration =
@@ -259,12 +252,26 @@ let generate (module_name : string) (package_name : string) (decls : declaration
           in
           let odecl_reads : Output.declaration =
             let ovar_reads = Output.global_reads name in
-            let otyret = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
+            let ovtparams =
+              def.def_params |> List.map (fun (_, x) ->
+                let otyparam = Output.type_parameter x in
+                (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
+              )
+            in
+            let otyret = Output.reads_type (Output.type_name otyname (otyparams |> List.map Output.type_variable)) in
             let otree = generate_message_decoder msg in
             Output.define_method ovar_reads ovtparams otyret otree
           in
           let odecl_writes : Output.declaration =
-            failwith "TODO: odecl_writes, GivenNormal"
+            let _ovar_writes = Output.global_writes name in
+            let _ovtparams =
+              def.def_params |> List.map (fun (_, x) ->
+                let _otyparam = Output.type_parameter x in
+                let oty = failwith "TODO: GivenNormal, type for writer parameter" in
+                (Output.local_for_parameter x, oty)
+              )
+            in
+            failwith "TODO: GivenNormal, odecl_writes"
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
