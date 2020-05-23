@@ -662,7 +662,6 @@ and generate_message_decoder (msg : message) : Output.tree =
   match msg with
   | Variable((_, x))      -> decoder_of_variable x
   | Name((_, name), args) -> decoder_of_name name args
-  | Record(rcd)           -> decoder_of_record rcd
 
 
 let rec generate_message_type (msg : message) : Output.typ =
@@ -674,14 +673,15 @@ let rec generate_message_type (msg : message) : Output.typ =
       let tys = args |> List.map generate_message_type in
       Output.type_name (Output.type_identifier name) tys
 
-  | Record(rcd) ->
-      let tyrcd =
-        RecordMap.fold (fun key vmsg acc ->
-          let ty = generate_message_type vmsg in
-          Alist.extend acc (key, ty)
-        ) rcd Alist.empty |> Alist.to_list
-      in
-      Output.record_type tyrcd
+
+let generate_record_type (record : record) : Output.typ =
+  let tyrcd =
+    RecordMap.fold (fun key vmsg acc ->
+      let ty = generate_message_type vmsg in
+      Alist.extend acc (key, ty)
+    ) record Alist.empty |> Alist.to_list
+  in
+  Output.record_type tyrcd
 
 
 let make_decoder_function_type (params : (variable ranged) list) (ty : Output.typ) : Output.typ =
@@ -741,8 +741,9 @@ and generate_message_encoder (msg : message) : Output.tree =
   match msg with
   | Variable((_, x))      -> encoder_of_variable x
   | Name((_, name), args) -> encoder_of_name name args
+(*
   | Record(rcd)           -> encoder_of_record rcd
-
+*)
 
 let generate (module_name : string) (decls : declarations) =
   let odecls =
@@ -774,6 +775,28 @@ let generate (module_name : string) (decls : declarations) =
           let odecl_encoder =
             let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
             let otree_encoder = generate_message_encoder msg in
+            Output.define_value ovar_encoder tyannot oparams otree_encoder
+          in
+          Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ]
+
+      | GivenRecord(record) ->
+          let otyname = Output.type_identifier name in
+          let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+          let odecl_type =
+            Output.define_type_alias otyname otyparam (generate_record_type record)
+          in
+          let tyaliasmsg =
+            let tyargs = otyparam |> List.map Output.type_variable in
+            Output.type_name otyname tyargs
+          in
+          let odecl_decoder =
+            let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
+            let otree = decoder_of_record record in
+            Output.define_value ovar_decoder tyannot oparams otree
+          in
+          let odecl_encoder =
+            let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
+            let otree_encoder = encoder_of_record record in
             Output.define_value ovar_encoder tyannot oparams otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ]

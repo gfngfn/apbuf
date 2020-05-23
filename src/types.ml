@@ -22,10 +22,12 @@ type constructor = string
 type parsed_message =
   | PVariable of variable ranged
   | PName    of string ranged * parsed_message list
-  | PRecord  of (string ranged * parsed_message) list
 [@@deriving show { with_path = false; }]
 
 type parsed_variant = (constructor ranged * parsed_message option) list
+[@@deriving show { with_path = false; }]
+
+type parsed_record = (string ranged * parsed_message) list
 [@@deriving show { with_path = false; }]
 
 type built_in =
@@ -39,6 +41,7 @@ type parsed_definition_main =
   | PBuiltIn      of built_in
   | PGivenNormal  of parsed_message
   | PGivenVariant of parsed_variant
+  | PGivenRecord  of parsed_record
 
 type parsed_definition = {
   pdef_params : (Range.t * variable) list;
@@ -75,13 +78,13 @@ let pp_variant_map pp ppf variant =
 type message =
   | Variable of variable ranged
   | Name     of Name.t ranged * message list
-  | Record   of message RecordMap.t
-      [@printer (pp_record_map pp_message)]
 [@@deriving show { with_path = false; }]
 
 type variant = (message option) VariantMap.t
   [@printer (pp_variant_map pp_message)]
-[@@deriving show { with_path = false; }]
+
+type record = message RecordMap.t
+  [@printer (pp_record_map pp_message)]
 
 module DeclMap = Map.Make(Name)
 
@@ -89,6 +92,7 @@ type definition_main =
   | BuiltIn      of built_in
   | GivenNormal  of message
   | GivenVariant of variant
+  | GivenRecord  of record
 
 type definition = {
   def_params : (Range.t * variable) list;
@@ -187,18 +191,6 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
       ) (return Alist.empty) >>= fun acc ->
       return (Name(rname, acc |> Alist.to_list))
 
-  | PRecord(prcd) ->
-      prcd |> List.fold_left (fun res (rlower, pmsgsub) ->
-        res >>= fun rcdmap ->
-        make_key rlower >>= fun (rng, key) ->
-        if rcdmap |> RecordMap.mem key then
-          error (FieldDefinedMoreThanOnce{ key = key; range = rng; })
-        else
-          normalize_message pmsgsub >>= fun msgsub ->
-          return (rcdmap |> RecordMap.add key msgsub)
-      ) (return RecordMap.empty) >>= fun rcdmap ->
-      return (Record(rcdmap))
-
 
 let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
   let open ResultMonad in
@@ -214,7 +206,22 @@ let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
       end >>= fun msgsubopt ->
       return (variantmap |> VariantMap.add ctor msgsubopt)
   ) (return VariantMap.empty) >>= fun variantmap ->
-  return (variantmap)
+  return variantmap
+
+
+let normalize_record (prcd : parsed_record) : (record, error) result =
+  let open ResultMonad in
+  prcd |> List.fold_left (fun res (rlower, pmsgsub) ->
+    res >>= fun rcdmap ->
+    make_key rlower >>= fun (rng, key) ->
+    if rcdmap |> RecordMap.mem key then
+      error (FieldDefinedMoreThanOnce{ key = key; range = rng; })
+    else
+      normalize_message pmsgsub >>= fun msgsub ->
+    return (rcdmap |> RecordMap.add key msgsub)
+  ) (return RecordMap.empty) >>= fun rcdmap ->
+  return rcdmap
+
 
 
 let normalize_declarations (pdecls : parsed_declarations) : (declarations, error) result =
@@ -237,6 +244,10 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
         | PGivenVariant(pvariant) ->
             normalize_variant pvariant >>= fun variant ->
             return (GivenVariant(variant))
+
+        | PGivenRecord(precord) ->
+            normalize_record precord >>= fun record ->
+            return (GivenRecord(record))
       end >>= fun defmain ->
       let def = { def_params = pdef.pdef_params; def_main = defmain } in
       return (declmap |> DeclMap.add name def)
@@ -275,12 +286,6 @@ let rec validate_message (find_arity : Name.t -> int option) (is_defined_variabl
             error (UndefinedMessageName{ name = name; })
       end
 
-  | Record(rcd) ->
-      RecordMap.fold (fun _key vmsg res ->
-        res >>= fun () ->
-        iter vmsg
-      ) rcd (return ())
-
 
 let validate_variant (find_arity : Name.t -> int option) (is_defined_variable : variable -> bool) (variant : variant) : (unit, error) result =
   let open ResultMonad in
@@ -290,6 +295,15 @@ let validate_variant (find_arity : Name.t -> int option) (is_defined_variable : 
     | None         -> return ()
     | Some(argmsg) -> validate_message find_arity is_defined_variable argmsg
   ) variant (return ())
+
+
+let validate_record (find_arity : Name.t -> int option) (is_defined_variable : variable -> bool) (record : record) : (unit, error) result =
+  let open ResultMonad in
+  RecordMap.fold (fun _key vmsg res ->
+    res >>= fun () ->
+    validate_message find_arity is_defined_variable vmsg
+  ) record (return ())
+
 
 
 module ParamSet = Set.Make(String)
@@ -326,6 +340,9 @@ let validate_declarations (decls : declarations) : (unit, error) result =
 
     | GivenVariant(variant) ->
         validate_variant find_arity is_defined_variable variant
+
+    | GivenRecord(record) ->
+        validate_record find_arity is_defined_variable record
 
   ) decls (return ())
 

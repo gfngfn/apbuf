@@ -174,9 +174,6 @@ let rec generate_message_type (msg : message) : Output.typ =
       let typs = args |> List.map generate_message_type in
       Output.type_name (Output.type_identifier name) typs
 
-  | Record(_rcd) ->
-      failwith "not implemented yet."
-
 
 let rec generate_message_decoder (msg : message) : Output.tree =
   match msg with
@@ -186,7 +183,7 @@ let rec generate_message_decoder (msg : message) : Output.tree =
   | Name((_, name), args) ->
       let otrees = args |> List.map generate_message_decoder in
       Output.application (Output.identifier (Output.global_reads name)) otrees
-
+(*
   | Record(rcd) ->
       let entries =
         RecordMap.fold (fun key vmsg acc ->
@@ -196,7 +193,7 @@ let rec generate_message_decoder (msg : message) : Output.tree =
         ) rcd Alist.empty |> Alist.to_list
       in
       Output.make_record_reads entries
-
+*)
 
 let generate (module_name : string) (package_name : string) (decls : declarations) =
   let odecls : Output.declaration list =
@@ -205,6 +202,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       | BuiltIn(_builtin)      -> acc (* TODO *)
       | GivenNormal(_msg)      -> acc (* TODO *)
       | GivenVariant(_variant) -> acc (* TODO *)
+      | GivenRecord(_record)   -> acc (* TODO *)
     ) decls Alist.empty |> Alist.to_list
   in
   let sdecls =
