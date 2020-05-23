@@ -325,8 +325,29 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             let fields = record |> RecordMap.map generate_message_type in
             Output.define_record_case_class otyname otyparams fields
           in
-          let odecl_reads = failwith "TODO: GivenRecord, odecl_reads" in
-          let odecl_writes = failwith "TODO: GivenRecord, odecl_writes" in
+          let odecl_reads =
+            let ovar_reads = Output.global_reads name in
+            let ovtparams =
+              def.def_params |> List.map (fun (_, x) ->
+                let otyparam = Output.type_parameter x in
+                (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
+              )
+            in
+            let otyret = Output.reads_type (Output.type_name otyname (otyparams |> List.map Output.type_variable)) in
+            let otree = decoder_of_record otyname record in
+            Output.define_method ovar_reads ovtparams otyret otree
+          in
+          let odecl_writes =
+            let _ovar_writes = Output.global_writes name in
+            let _ovtparams =
+              def.def_params |> List.map (fun (_, x) ->
+                let _otyparam = Output.type_parameter x in
+                let oty = failwith "TODO: GivenRecord, type for writer parameter" in
+                (Output.local_for_parameter x, oty)
+              )
+            in
+            failwith "TODO: GivenRecord, odecl_writes"
+          in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
       | GivenVariant(_variant) ->
