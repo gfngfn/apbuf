@@ -22,7 +22,7 @@ module Output : sig
   val make_record_reads : type_identifier -> (typ * tree) RecordMap.t -> tree
   val make_variant_reads : type_identifier -> ((typ * tree) option) VariantMap.t -> tree
   type declaration
-  val define_variant_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
+  val define_variant_case_class : type_identifier -> type_parameter list -> (typ option) VariantMap.t -> declaration
   val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
   val define_method : identifier -> (identifier * typ) list -> typ -> tree -> declaration
@@ -120,7 +120,7 @@ end = struct
     | DefVariantCaseClass of {
         type_name    : type_identifier;
         type_params  : type_parameter list;
-        constructors : (string * typ) list;
+        constructors : (typ option) VariantMap.t;
       }
     | DefRecordCaseClass of {
         type_name   : type_identifier;
@@ -225,10 +225,18 @@ end = struct
         let paramseq = make_parameter_string otyparams in
         let smain = Printf.sprintf "%s%s" tynm paramseq in
         let sctors =
-          ctors |> List.map (fun (ctornm, ty) ->
-            let sty = stringify_type ty in
-            Printf.sprintf "case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
-          )
+          VariantMap.fold (fun ctornm otyopt acc ->
+            let s =
+              match otyopt with
+              | None ->
+                  Printf.sprintf "case class %s%s() extends %s\n" ctornm paramseq smain
+
+              | Some(oty) ->
+                  let sty = stringify_type oty in
+                  Printf.sprintf "case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
+            in
+            Alist.extend acc s
+          ) ctors Alist.empty |> Alist.to_list
         in
         (Printf.sprintf "sealed trait %s\n" smain) :: sctors
         |> String.concat ""
@@ -391,8 +399,16 @@ let generate (module_name : string) (package_name : string) (decls : declaration
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
-      | GivenVariant(_variant) ->
-          failwith "TODO: GivenVariant"
+      | GivenVariant(variant) ->
+          let otyname = Output.type_identifier name in
+          let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+          let odecl_type : Output.declaration =
+            let ctors = variant |> VariantMap.map (Option.map generate_message_type) in
+            Output.define_variant_case_class otyname otyparams ctors
+          in
+          let odecl_reads : Output.declaration = failwith "TODO: GivenVariant, odecl_reads" in
+          let odecl_writes : Output.declaration = failwith "TODO: GivenVariant, odecl_writes" in
+          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
     ) decls Alist.empty |> Alist.to_list
   in
