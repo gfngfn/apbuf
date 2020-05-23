@@ -406,7 +406,18 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             let ctors = variant |> VariantMap.map (Option.map generate_message_type) in
             Output.define_variant_case_class otyname otyparams ctors
           in
-          let odecl_reads : Output.declaration = failwith "TODO: GivenVariant, odecl_reads" in
+          let odecl_reads : Output.declaration =
+            let ovar_reads = Output.global_reads name in
+            let ovtparams =
+              def.def_params |> List.map (fun (_, x) ->
+                let otyparam = Output.type_parameter x in
+                (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
+              )
+            in
+            let otyret = Output.reads_type (Output.type_name otyname (otyparams |> List.map Output.type_variable)) in
+            let otree = decoder_of_variant otyname variant in
+            Output.define_method ovar_reads ovtparams otyret otree
+          in
           let odecl_writes : Output.declaration = failwith "TODO: GivenVariant, odecl_writes" in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
