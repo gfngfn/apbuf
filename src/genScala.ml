@@ -130,7 +130,7 @@ end = struct
         Printf.sprintf "%s(%s)" sfun (String.concat ", " sargs)
 
     | RecordReads{ fields = _fields; } ->
-        "(record)" (* TODO *)
+        failwith "TODO: stringify_tree, RecordReads"
 
   let stringify_declaration (odecl : declaration) =
     match odecl with
@@ -183,17 +183,18 @@ let rec generate_message_decoder (msg : message) : Output.tree =
   | Name((_, name), args) ->
       let otrees = args |> List.map generate_message_decoder in
       Output.application (Output.identifier (Output.global_reads name)) otrees
-(*
-  | Record(rcd) ->
-      let entries =
-        RecordMap.fold (fun key vmsg acc ->
-          let otree = generate_message_decoder vmsg in
-          let typ = generate_message_type vmsg in
-          Alist.extend acc (key, typ, otree)
-        ) rcd Alist.empty |> Alist.to_list
-      in
-      Output.make_record_reads entries
-*)
+
+
+let decoder_of_record (record : record) : Output.tree =
+  let entries =
+    RecordMap.fold (fun key vmsg acc ->
+      let otree = generate_message_decoder vmsg in
+      let typ = generate_message_type vmsg in
+      Alist.extend acc (key, typ, otree)
+    ) record Alist.empty |> Alist.to_list
+  in
+  Output.make_record_reads entries
+
 
 let generate (module_name : string) (package_name : string) (decls : declarations) =
   let odecls : Output.declaration list =
