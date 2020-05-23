@@ -21,7 +21,8 @@ module Output : sig
   val application : tree -> tree list -> tree
   val make_record_reads : (Key.t * typ * tree) list -> tree
   type declaration
-  val define_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
+  val define_variant_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
+  val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
   val define_method : identifier -> (identifier * typ) list -> typ -> tree -> declaration
   val stringify_declaration : declaration -> string
@@ -101,10 +102,15 @@ end = struct
     RecordReads{ fields = fields; }
 
   type declaration =
-    | DefCaseClass of {
+    | DefVariantCaseClass of {
         type_name    : type_identifier;
         type_params  : type_parameter list;
         constructors : (string * typ) list;
+      }
+    | DefRecordCaseClass of {
+        type_name   : type_identifier;
+        type_params : type_parameter list;
+        fields      : typ RecordMap.t;
       }
     | DefTypeAlias of {
         type_name   : type_identifier;
@@ -118,11 +124,18 @@ end = struct
         body        : tree;
       }
 
-  let define_case_class tyid typarams ctors =
-    DefCaseClass{
+  let define_variant_case_class tyid typarams ctors =
+    DefVariantCaseClass{
       type_name    = tyid;
       type_params  = typarams;
       constructors = ctors;
+    }
+
+  let define_record_case_class tyid typarams fields =
+    DefRecordCaseClass{
+      type_name   = tyid;
+      type_params = typarams;
+      fields      = fields;
     }
 
   let define_type_alias tyid typarams oty =
@@ -161,7 +174,7 @@ end = struct
 
   let stringify_declaration (odecl : declaration) =
     match odecl with
-    | DefCaseClass{
+    | DefVariantCaseClass{
         type_name    = TypeIdentifier(tynm);
         type_params  = otyparams;
         constructors = ctors;
@@ -177,6 +190,23 @@ end = struct
         (Printf.sprintf "sealed trait %s\n" smain) :: sctors
         |> String.concat ""
 
+    | DefRecordCaseClass{
+        type_name   = TypeIdentifier(tynm);
+        type_params = otyparams;
+        fields      = fields;
+      } ->
+        let paramseq = make_parameter_string otyparams in
+        let sfields =
+          RecordMap.fold (fun key oty acc ->
+            let skey = Key.lower_camel_case key in
+            let sty = stringify_type oty in
+            let s = Printf.sprintf "%s: %s" skey sty in
+            Alist.extend acc s
+          ) fields Alist.empty
+            |> Alist.to_list |> String.concat ", "
+        in
+        Printf.sprintf "case class %s%s(%s)\n" tynm paramseq sfields
+
     | DefTypeAlias{
         type_name   = TypeIdentifier(tynm);
         type_params = otyparams;
@@ -184,7 +214,7 @@ end = struct
       } ->
         let paramseq = make_parameter_string otyparams in
         let sty = stringify_type oty in
-        Printf.sprintf "type %s%s = %s" tynm paramseq sty
+        Printf.sprintf "type %s%s = %s\n" tynm paramseq sty
 
     | DefMethod{
         method_name = Var(varnm);
@@ -275,8 +305,20 @@ let generate (module_name : string) (package_name : string) (decls : declaration
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
-      | GivenVariant(_variant) -> acc (* TODO *)
-      | GivenRecord(_record)   -> acc (* TODO *)
+      | GivenRecord(record) ->
+          let otyname = Output.type_identifier name in
+          let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+          let odecl_type : Output.declaration =
+            let fields = record |> RecordMap.map generate_message_type in
+            Output.define_record_case_class otyname otyparams fields
+          in
+          let odecl_reads = failwith "TODO: GivenRecord, odecl_reads" in
+          let odecl_writes = failwith "TODO: GivenRecord, odecl_writes" in
+          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
+
+      | GivenVariant(_variant) ->
+          failwith "TODO: GivenVariant"
+
     ) decls Alist.empty |> Alist.to_list
   in
   let sdecls =
