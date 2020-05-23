@@ -23,7 +23,7 @@ module Output : sig
   type declaration
   val define_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
-  val define_method : identifier -> typ -> (identifier * typ) list -> tree -> declaration
+  val define_method : identifier -> (identifier * typ) list -> typ -> tree -> declaration
   val stringify_declaration : declaration -> string
 end = struct
 
@@ -113,8 +113,8 @@ end = struct
       }
     | DefMethod of {
         method_name : identifier;
-        return_type : typ;
         params      : (identifier * typ) list;
+        return_type : typ;
         body        : tree;
       }
 
@@ -132,11 +132,11 @@ end = struct
       type_real   = oty;
     }
 
-  let define_method ident oty vtparams otree =
+  let define_method ident vtparams otyret otree =
     DefMethod{
       method_name = ident;
-      return_type = oty;
       params      = vtparams;
+      return_type = otyret;
       body        = otree;
     }
 
@@ -259,9 +259,9 @@ let generate (module_name : string) (package_name : string) (decls : declaration
           in
           let odecl_reads : Output.declaration =
             let ovar_reads = Output.global_reads name in
-            let tyret = failwith "TODO: tyret" in
+            let otyret = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
             let otree = generate_message_decoder msg in
-            Output.define_method ovar_reads tyret ovtparams otree
+            Output.define_method ovar_reads ovtparams otyret otree
           in
           let odecl_writes : Output.declaration =
             failwith "TODO: odecl_writes, GivenNormal"
