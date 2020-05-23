@@ -19,7 +19,7 @@ module Output : sig
   type tree
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
-  val make_record_reads : (Key.t * typ * tree) list -> tree
+  val make_record_reads : type_identifier -> (typ * tree) RecordMap.t -> tree
   type declaration
   val define_variant_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
   val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
@@ -89,7 +89,8 @@ end = struct
         arguments : tree list;
       }
     | RecordReads of {
-        fields : (Key.t * typ * tree) list;
+        type_name : type_identifier;
+        entries   : (typ * tree) RecordMap.t;
       }
 
   let identifier ident =
@@ -98,8 +99,11 @@ end = struct
   let application ot ots =
     Application{ applied = ot; arguments = ots; }
 
-  let make_record_reads fields =
-    RecordReads{ fields = fields; }
+  let make_record_reads tyid entries =
+    RecordReads{
+      type_name = tyid;
+      entries   = entries;
+    }
 
   type declaration =
     | DefVariantCaseClass of {
@@ -163,8 +167,17 @@ end = struct
         let sargs = otargs |> List.map stringify_tree in
         Printf.sprintf "%s(%s)" sfun (String.concat ", " sargs)
 
-    | RecordReads{ fields = _fields; } ->
-        failwith "TODO: stringify_tree, RecordReads"
+    | RecordReads{ type_name = TypeIdentifier(tynm); entries = entries; } ->
+        let smain =
+          RecordMap.fold (fun key (oty, otree_decoder) acc ->
+            let skey = Key.lower_camel_case key in
+            let sty = stringify_type oty in
+            let sdec = stringify_tree otree_decoder in
+            let s = Printf.sprintf "(JsPath \ \"%s\").read[%s](%s)" skey sty sdec in
+            Alist.extend acc s
+          ) entries Alist.empty |> Alist.to_list |> String.concat " and "
+        in
+        Printf.sprintf "(%s)(%s.apply _)" smain tynm
 
   let make_parameter_string otyparams =
     let styparams = otyparams |> List.map (function TypeParameter(s) -> s) in
@@ -255,15 +268,15 @@ let rec generate_message_decoder (msg : message) : Output.tree =
       Output.application (Output.identifier (Output.global_reads name)) otrees
 
 
-let decoder_of_record (record : record) : Output.tree =
+let decoder_of_record (tyid : Output.type_identifier) (record : record) : Output.tree =
   let entries =
-    RecordMap.fold (fun key vmsg acc ->
+    record |> RecordMap.map (fun vmsg ->
       let otree = generate_message_decoder vmsg in
       let typ = generate_message_type vmsg in
-      Alist.extend acc (key, typ, otree)
-    ) record Alist.empty |> Alist.to_list
+      (typ, otree)
+    )
   in
-  Output.make_record_reads entries
+  Output.make_record_reads tyid entries
 
 
 let generate (module_name : string) (package_name : string) (decls : declarations) =
