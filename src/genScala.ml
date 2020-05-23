@@ -14,6 +14,7 @@ module Output : sig
   type typ
   val type_variable : type_parameter -> typ
   val type_name : type_identifier -> typ list -> typ
+  val reads_type : typ -> typ
   val func_type : typ -> typ -> typ
   type tree
   val identifier : identifier -> tree
@@ -22,7 +23,7 @@ module Output : sig
   type declaration
   val define_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
-  val define_method : identifier -> typ -> identifier list -> tree -> declaration
+  val define_method : identifier -> typ -> (identifier * typ) list -> tree -> declaration
   val stringify_declaration : declaration -> string
 end = struct
 
@@ -60,6 +61,9 @@ end = struct
 
   let type_name tyident typs =
     TypeName(tyident, typs)
+
+  let reads_type oty =
+    TypeName(TypeIdentifier("Reads"), [oty])
 
   let func_type oty1 oty2 =
     FuncType(oty1, oty2)
@@ -110,7 +114,7 @@ end = struct
     | DefMethod of {
         method_name : identifier;
         return_type : typ;
-        params      : identifier list;
+        params      : (identifier * typ) list;
         body        : tree;
       }
 
@@ -128,11 +132,11 @@ end = struct
       type_real   = oty;
     }
 
-  let define_method ident oty params otree =
+  let define_method ident oty vtparams otree =
     DefMethod{
       method_name = ident;
       return_type = oty;
-      params      = params;
+      params      = vtparams;
       body        = otree;
     }
 
@@ -185,10 +189,15 @@ end = struct
     | DefMethod{
         method_name = Var(varnm);
         return_type = _oty;
-        params      = params;
+        params      = ovtparams;
         body        = otree;
       } ->
-        let sparams = params |> List.map (function Var(s) -> s) in
+        let sparams =
+          ovtparams |> List.map (function (Var(sv), oty) ->
+            let sty = stringify_type oty in
+            Printf.sprintf "%s: %s" sv sty
+          )
+        in
         let paramseq = String.concat ", " sparams in
         let sbody = stringify_tree otree in
         Printf.sprintf "def %s(%s) = { %s }\n" varnm paramseq sbody
@@ -235,16 +244,24 @@ let generate (module_name : string) (package_name : string) (decls : declaration
           failwith "TODO: generate, BuiltIn"
 
       | GivenNormal(msg) ->
-          let ovar_reads = Output.global_reads name in
           let _ovar_writes = Output.global_writes name in
-          let oparams = def.def_params |> List.map (fun (_, x) -> Output.local_for_parameter x) in
+          let ovtparams =
+            def.def_params |> List.map (fun (_, x) ->
+              let otyparam = Output.type_parameter x in
+              (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
+            )
+          in
+          let otyname = Output.type_identifier name in
+          let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
           let odecl_type : Output.declaration =
-            failwith "TODO: odecl_type, GivenNormal"
+            let oty = generate_message_type msg in
+            Output.define_type_alias otyname otyparams oty
           in
           let odecl_reads : Output.declaration =
+            let ovar_reads = Output.global_reads name in
             let tyret = failwith "TODO: tyret" in
             let otree = generate_message_decoder msg in
-            Output.define_method ovar_reads tyret oparams otree
+            Output.define_method ovar_reads tyret ovtparams otree
           in
           let odecl_writes : Output.declaration =
             failwith "TODO: odecl_writes, GivenNormal"
