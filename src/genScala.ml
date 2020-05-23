@@ -20,6 +20,7 @@ module Output : sig
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
   val make_record_reads : type_identifier -> (typ * tree) RecordMap.t -> tree
+  val make_variant_reads : type_identifier -> ((typ * tree) option) VariantMap.t -> tree
   type declaration
   val define_variant_case_class : type_identifier -> type_parameter list -> (string * typ) list -> declaration
   val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
@@ -92,6 +93,10 @@ end = struct
         type_name : type_identifier;
         entries   : (typ * tree) RecordMap.t;
       }
+    | VariantReads of {
+        type_name    : type_identifier;
+        constructors : ((typ * tree) option) VariantMap.t;
+      }
 
   let identifier ident =
     Identifier(ident)
@@ -103,6 +108,12 @@ end = struct
     RecordReads{
       type_name = tyid;
       entries   = entries;
+    }
+
+  let make_variant_reads tyid ctors =
+    VariantReads{
+      type_name    = tyid;
+      constructors = ctors;
     }
 
   type declaration =
@@ -173,11 +184,30 @@ end = struct
             let skey = Key.lower_camel_case key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
-            let s = Printf.sprintf "(JsPath \ \"%s\").read[%s](%s)" skey sty sdec in
+            let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
             Alist.extend acc s
           ) entries Alist.empty |> Alist.to_list |> String.concat " and "
         in
         Printf.sprintf "(%s)(%s.apply _)" smain tynm
+
+    | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
+        let scases =
+          VariantMap.fold (fun ctor otreeopt acc ->
+            let s =
+              match otreeopt with
+              | None ->
+                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" ctor ctor
+
+              | Some(oty, otree_decoder) ->
+                  let sty = stringify_type oty in
+                  let sdec = stringify_tree otree_decoder in
+                  Printf.sprintf "case \"%s\" => (JsPath \\ \"arg\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" ctor sty sdec ctor
+            in
+            Alist.extend acc s
+
+          ) ctors Alist.empty |> Alist.to_list |> String.concat " "
+        in
+        Printf.sprintf "(JsPath \\ \"label\").read[String].flatMap { (label: String) => label match { %s }}" scases
 
   let make_parameter_string otyparams =
     let styparams = otyparams |> List.map (function TypeParameter(s) -> s) in
@@ -277,6 +307,17 @@ let decoder_of_record (tyid : Output.type_identifier) (record : record) : Output
     )
   in
   Output.make_record_reads tyid entries
+
+
+let decoder_of_variant (tyid : Output.type_identifier) (variant : variant) : Output.tree =
+  let ctors =
+    variant |> VariantMap.map (Option.map (fun msg ->
+      let oty = generate_message_type msg in
+      let otree = generate_message_decoder msg in
+      (oty, otree)
+    ))
+  in
+  Output.make_variant_reads tyid ctors
 
 
 let generate (module_name : string) (package_name : string) (decls : declarations) =
