@@ -79,7 +79,11 @@ end = struct
   let rec stringify_type (oty : typ) =
     match oty with
     | TypeName(TypeIdentifier(tynm), tyargs) ->
-        Printf.sprintf "%s[%s]" tynm (tyargs |> List.map stringify_type |> String.concat ", ")
+        begin
+          match tyargs with
+          | []     -> tynm
+          | _ :: _ -> Printf.sprintf "%s[%s]" tynm (tyargs |> List.map stringify_type |> String.concat ", ")
+        end
 
     | TypeVariable(TypeParameter(x)) ->
         x
