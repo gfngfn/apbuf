@@ -15,11 +15,13 @@ module Output : sig
   val type_variable : type_parameter -> typ
   val type_name : type_identifier -> typ list -> typ
   val reads_type : typ -> typ
+  val writes_type : typ -> typ
   val func_type : typ -> typ -> typ
   type tree
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
   val make_record_reads : type_identifier -> (typ * tree) RecordMap.t -> tree
+  val make_record_writes : type_identifier -> (typ * tree) RecordMap.t -> tree
   val make_variant_reads : type_identifier -> ((typ * tree) option) VariantMap.t -> tree
   type declaration
   val define_variant_case_class : type_identifier -> type_parameter list -> (typ option) VariantMap.t -> declaration
@@ -67,6 +69,9 @@ end = struct
   let reads_type oty =
     TypeName(TypeIdentifier("Reads"), [oty])
 
+  let writes_type oty =
+    TypeName(TypeIdentifier("Writes"), [oty])
+
   let func_type oty1 oty2 =
     FuncType(oty1, oty2)
 
@@ -97,6 +102,10 @@ end = struct
         type_name    : type_identifier;
         constructors : ((typ * tree) option) VariantMap.t;
       }
+    | RecordWrites of {
+        type_name : type_identifier;
+        entries   : (typ * tree) RecordMap.t;
+      }
 
   let identifier ident =
     Identifier(ident)
@@ -106,6 +115,12 @@ end = struct
 
   let make_record_reads tyid entries =
     RecordReads{
+      type_name = tyid;
+      entries   = entries;
+    }
+
+  let make_record_writes tyid entries =
+    RecordWrites{
       type_name = tyid;
       entries   = entries;
     }
@@ -189,6 +204,18 @@ end = struct
           ) entries Alist.empty |> Alist.to_list |> String.concat " and "
         in
         Printf.sprintf "(%s)(%s.apply _)" smain tynm
+
+    | RecordWrites{ type_name = TypeIdentifier(tynm); entries = entries; } ->
+        let smain =
+          RecordMap.fold (fun key (oty, otree_decoder) acc ->
+            let skey = Key.lower_camel_case key in
+            let sty = stringify_type oty in
+            let sdec = stringify_tree otree_decoder in
+            let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty sdec in
+            Alist.extend acc s
+          ) entries Alist.empty |> Alist.to_list |> String.concat " and "
+        in
+        Printf.sprintf "(%s)(unlift(%s.unapply))" smain tynm
 
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
@@ -306,7 +333,7 @@ let rec generate_message_decoder (msg : message) : Output.tree =
       Output.application (Output.identifier (Output.global_reads name)) otrees
 
 
-let decoder_of_record (tyid : Output.type_identifier) (record : record) : Output.tree =
+let decoder_and_encoder_of_record (tyid : Output.type_identifier) (record : record) : Output.tree * Output.tree =
   let entries =
     record |> RecordMap.map (fun vmsg ->
       let otree = generate_message_decoder vmsg in
@@ -314,7 +341,9 @@ let decoder_of_record (tyid : Output.type_identifier) (record : record) : Output
       (typ, otree)
     )
   in
-  Output.make_record_reads tyid entries
+  let dec = Output.make_record_reads tyid entries in
+  let enc = Output.make_record_writes tyid entries in
+  (dec, enc)
 
 
 let decoder_of_variant (tyid : Output.type_identifier) (variant : variant) : Output.tree =
@@ -370,10 +399,12 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       | GivenRecord(record) ->
           let otyname = Output.type_identifier name in
           let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+          let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
           let odecl_type : Output.declaration =
             let fields = record |> RecordMap.map generate_message_type in
             Output.define_record_case_class otyname otyparams fields
           in
+          let (otree_decoder, otree_encoder) = decoder_and_encoder_of_record otyname record in
           let odecl_reads =
             let ovar_reads = Output.global_reads name in
             let ovtparams =
@@ -382,20 +413,19 @@ let generate (module_name : string) (package_name : string) (decls : declaration
                 (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
               )
             in
-            let otyret = Output.reads_type (Output.type_name otyname (otyparams |> List.map Output.type_variable)) in
-            let otree = decoder_of_record otyname record in
-            Output.define_method ovar_reads ovtparams otyret otree
+            let otyret = Output.reads_type otymsg in
+            Output.define_method ovar_reads ovtparams otyret otree_decoder
           in
           let odecl_writes =
-            let _ovar_writes = Output.global_writes name in
-            let _ovtparams =
+            let ovar_writes = Output.global_writes name in
+            let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
-                let _otyparam = Output.type_parameter x in
-                let oty = failwith "TODO: GivenRecord, type for writer parameter" in
-                (Output.local_for_parameter x, oty)
+                let otyparam = Output.type_parameter x in
+                (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
               )
             in
-            failwith "TODO: GivenRecord, odecl_writes"
+            let otyret = Output.writes_type otymsg in
+            Output.define_method ovar_writes ovtparams otyret otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
