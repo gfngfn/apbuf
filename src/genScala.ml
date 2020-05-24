@@ -21,7 +21,7 @@ module Output : sig
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
   val make_record_reads : type_identifier -> (typ * tree) RecordMap.t -> tree
-  val make_record_writes : type_identifier -> (typ * tree) RecordMap.t -> tree
+  val make_record_writes : type_identifier -> type_parameter list -> (typ * tree) RecordMap.t -> tree
   val make_variant_reads : type_identifier -> ((typ * tree) option) VariantMap.t -> tree
   val make_variant_writes : type_identifier -> ((typ * tree) option) VariantMap.t -> tree
   type declaration
@@ -104,8 +104,9 @@ end = struct
         entries   : (typ * tree) RecordMap.t;
       }
     | RecordWrites of {
-        type_name : type_identifier;
-        entries   : (typ * tree) RecordMap.t;
+        type_name   : type_identifier;
+        type_params : type_parameter list;
+        entries     : (typ * tree) RecordMap.t;
       }
     | VariantReads of {
         type_name    : type_identifier;
@@ -128,10 +129,11 @@ end = struct
       entries   = entries;
     }
 
-  let make_record_writes tyid entries =
+  let make_record_writes tyid otyparams entries =
     RecordWrites{
-      type_name = tyid;
-      entries   = entries;
+      type_name   = tyid;
+      type_params = otyparams;
+      entries     = entries;
     }
 
   let make_variant_reads tyid ctors =
@@ -222,7 +224,11 @@ end = struct
         in
         Printf.sprintf "(%s)(%s.apply _)" smain tynm
 
-    | RecordWrites{ type_name = TypeIdentifier(tynm); entries = entries; } ->
+    | RecordWrites{
+        type_name   = TypeIdentifier(tynm);
+        type_params = otyparams;
+        entries     = entries;
+      } ->
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
             let skey = Key.lower_camel_case key in
@@ -232,7 +238,12 @@ end = struct
             Alist.extend acc s
           ) entries Alist.empty |> Alist.to_list |> String.concat " and "
         in
-        Printf.sprintf "(%s)(unlift(%s.unapply))" smain tynm
+        let typaramseq =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+        in
+        Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm typaramseq
 
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
@@ -265,12 +276,13 @@ end = struct
                   let sty = stringify_type oty in
                   let senc = stringify_tree otree_encoder in
                   let slabel =
-                    Printf.sprintf "(JsPath \\ \"label\").write[String](%s)(StringWrites)" ctor
+                    Printf.sprintf "(JsPath \\ \"label\").write[String](\"%s\")(StringWrites)" ctor
                   in
                   let sarg =
                     Printf.sprintf "(JsPath \\ \"arg\").write[%s](arg)(%s)" sty senc
                   in
                   Printf.sprintf "case %s(arg) => (%s and %s)(unlift(%s.unapply))" ctor slabel sarg sty
+                    (* -- TODO: should be, for example, `Position.unapply[Num]`, not `Position[Num].unapply` *)
             in
             Alist.extend acc s
 
@@ -401,7 +413,7 @@ let decoder_of_record (tyid : Output.type_identifier) (record : record) : Output
   Output.make_record_reads tyid entries
 
 
-let encoder_of_record (tyid : Output.type_identifier) (record : record) : Output.tree =
+let encoder_of_record (tyid : Output.type_identifier) (otyparams : Output.type_parameter list) (record : record) : Output.tree =
   let entries =
     record |> RecordMap.map (fun msg ->
       let otree_encoder = generate_message_encoder msg in
@@ -409,7 +421,7 @@ let encoder_of_record (tyid : Output.type_identifier) (record : record) : Output
       (typ, otree_encoder)
     )
   in
-  Output.make_record_writes tyid entries
+  Output.make_record_writes tyid otyparams entries
 
 
 let decoder_of_variant (tyid : Output.type_identifier) (variant : variant) : Output.tree =
@@ -496,7 +508,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
           in
           let odecl_writes =
-            let otree_encoder = encoder_of_record otyname record in
+            let otree_encoder = encoder_of_record otyname otyparams record in
             let ovar_writes = Output.global_writes name in
             let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
