@@ -26,7 +26,7 @@ let pp decls s =
   Format.printf "OUTPUT:@ @[%s@]" s
 
 
-let generate (dir_out : string) (decls : declarations) : unit =
+let generate_elm (dir_out : string) (decls : declarations) : unit =
   let module_name = "APBufGen" in
   let s = GenElm.generate module_name decls in
   let path_out = Filename.concat dir_out (module_name ^ ".elm") in
@@ -35,6 +35,37 @@ let generate (dir_out : string) (decls : declarations) : unit =
   output_string fout s;
   close_out fout;
   print_endline "done."
+
+
+let generate_scala (dir_out : string) (decls : declarations) : unit =
+  let module_name = "APBufGen" in
+  let package_name = "apbufgen" in
+  let s = GenScala.generate module_name package_name decls in
+  let path_out = Filename.concat dir_out (module_name ^ ".scala") in
+  Format.printf "writing output on '%s' ...\n" path_out;
+  let fout = open_out path_out in
+  output_string fout s;
+  close_out fout;
+  print_endline "done."
+
+
+let output_loop dir_in meta decls =
+  let open ResultMonad in
+  match meta with
+  | MetaOutput((_, "elm"), (_, dir)) ->
+      validate_declarations decls >>= fun () ->
+      let dir_out =
+        if Filename.is_relative dir then
+          Filename.concat dir_in dir
+        else
+          dir
+      in
+      generate_elm dir_out decls;
+      return ()
+
+  | MetaOutput((_, other), _) ->
+      error (UnsupportedTarget{ target = other; })
+
 
 
 (** This is the core part of the program.
@@ -52,20 +83,7 @@ let main path_in =
     ParserInterface.process path_in >>= fun (meta, pdecls) ->
     let pdecls = List.append built_in_declarations pdecls in
     normalize_declarations pdecls >>= fun decls ->
-    match meta with
-    | MetaOutput((_, "elm"), (_, dir)) ->
-        validate_declarations decls >>= fun () ->
-        let dir_out =
-          if Filename.is_relative dir then
-            Filename.concat dir_in dir
-          else
-            dir
-        in
-        generate dir_out decls;
-        return ()
-
-    | MetaOutput((_, other), _) ->
-        error (UnsupportedTarget{ target = other; })
+    output_loop dir_in meta decls
   in
   match res with
   | Ok(()) ->

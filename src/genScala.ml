@@ -426,7 +426,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
     DeclMap.fold (fun name def acc ->
       match def.def_main with
       | BuiltIn(_builtin) ->
-          failwith "TODO: generate, BuiltIn"
+          acc  (* TEMPORARY; TODO *)
 
       | GivenNormal(msg) ->
           let otyname = Output.type_identifier name in
