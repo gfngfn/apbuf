@@ -3,3 +3,5 @@ gen/elm-stuff/
 gen/src/
 gen/elm.json
 gen/target/
+gen/project/
+gen/*.scala
