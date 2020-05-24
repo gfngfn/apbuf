@@ -1,4 +1,7 @@
 
+.PHONY: all
+all: bar
+
 .PHONY: init_scala
 init_scala: bar
 	sbt new playframework/play-scala-seed.g8
