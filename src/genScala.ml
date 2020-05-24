@@ -323,14 +323,22 @@ let rec generate_message_type (msg : message) : Output.typ =
       Output.type_name (Output.type_identifier name) typs
 
 
-let rec generate_message_decoder (msg : message) : Output.tree =
+let rec generate_message_decoder_or_encoder (namef : Name.t -> Output.identifier) (msg : message) : Output.tree =
   match msg with
   | Variable((_, x)) ->
       Output.identifier (Output.local_for_parameter x)
 
   | Name((_, name), args) ->
-      let otrees = args |> List.map generate_message_decoder in
-      Output.application (Output.identifier (Output.global_reads name)) otrees
+      let otrees = args |> List.map (generate_message_decoder_or_encoder namef) in
+      Output.application (Output.identifier (namef name)) otrees
+
+
+let generate_message_decoder : message -> Output.tree =
+  generate_message_decoder_or_encoder Output.global_reads
+
+
+let generate_message_encoder : message -> Output.tree =
+  generate_message_decoder_or_encoder Output.global_writes
 
 
 let decoder_and_encoder_of_record (tyid : Output.type_identifier) (record : record) : Output.tree * Output.tree =
@@ -367,6 +375,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       | GivenNormal(msg) ->
           let otyname = Output.type_identifier name in
           let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+          let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
           let odecl_type : Output.declaration =
             let oty = generate_message_type msg in
             Output.define_type_alias otyname otyparams oty
@@ -379,20 +388,21 @@ let generate (module_name : string) (package_name : string) (decls : declaration
                 (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
               )
             in
-            let otyret = Output.reads_type (Output.type_name otyname (otyparams |> List.map Output.type_variable)) in
-            let otree = generate_message_decoder msg in
-            Output.define_method ovar_reads ovtparams otyret otree
+            let otyret = Output.reads_type otymsg in
+            let otree_decoder = generate_message_decoder msg in
+            Output.define_method ovar_reads ovtparams otyret otree_decoder
           in
           let odecl_writes : Output.declaration =
-            let _ovar_writes = Output.global_writes name in
-            let _ovtparams =
+            let ovar_writes = Output.global_writes name in
+            let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
-                let _otyparam = Output.type_parameter x in
-                let oty = failwith "TODO: GivenNormal, type for writer parameter" in
-                (Output.local_for_parameter x, oty)
+                let otyparam = Output.type_parameter x in
+                (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
               )
             in
-            failwith "TODO: GivenNormal, odecl_writes"
+            let otree_encoder = generate_message_encoder msg in
+            let otyret = Output.writes_type otymsg in
+            Output.define_method ovar_writes ovtparams otyret otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
