@@ -20,7 +20,7 @@ module Output : sig
   type tree
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
-  val make_record_reads : type_identifier -> (typ * tree) RecordMap.t -> tree
+  val make_record_reads : type_identifier -> type_parameter list -> (typ * tree) RecordMap.t -> tree
   val make_record_writes : type_identifier -> type_parameter list -> (typ * tree) RecordMap.t -> tree
   val make_variant_reads : type_identifier -> ((typ * tree) option) VariantMap.t -> tree
   val make_variant_writes : type_identifier -> type_parameter list -> ((typ * tree) option) VariantMap.t -> tree
@@ -100,8 +100,9 @@ end = struct
         arguments : tree list;
       }
     | RecordReads of {
-        type_name : type_identifier;
-        entries   : (typ * tree) RecordMap.t;
+        type_name   : type_identifier;
+        type_params : type_parameter list;
+        entries     : (typ * tree) RecordMap.t;
       }
     | RecordWrites of {
         type_name   : type_identifier;
@@ -124,10 +125,11 @@ end = struct
   let application ot ots =
     Application{ applied = ot; arguments = ots; }
 
-  let make_record_reads tyid entries =
+  let make_record_reads tyid otyparams entries =
     RecordReads{
-      type_name = tyid;
-      entries   = entries;
+      type_name   = tyid;
+      type_params = otyparams;
+      entries     = entries;
     }
 
   let make_record_writes tyid otyparams entries =
@@ -214,7 +216,16 @@ end = struct
         let sargs = otargs |> List.map stringify_tree in
         Printf.sprintf "%s(%s)" sfun (String.concat ", " sargs)
 
-    | RecordReads{ type_name = TypeIdentifier(tynm); entries = entries; } ->
+    | RecordReads{
+        type_name   = TypeIdentifier(tynm);
+        type_params = otyparams;
+        entries     = entries;
+      } ->
+        let styparamseq =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+        in
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
             let skey = Key.lower_camel_case key in
@@ -224,7 +235,7 @@ end = struct
             Alist.extend acc s
           ) entries Alist.empty |> Alist.to_list |> String.concat " and "
         in
-        Printf.sprintf "(%s)(%s.apply _)" smain tynm
+        Printf.sprintf "(%s)(%s.apply%s _)" smain tynm styparamseq
 
     | RecordWrites{
         type_name   = TypeIdentifier(tynm);
@@ -240,12 +251,12 @@ end = struct
             Alist.extend acc s
           ) entries Alist.empty |> Alist.to_list |> String.concat " and "
         in
-        let typaramseq =
+        let styparamseq =
           match otyparams with
           | []     -> ""
           | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
         in
-        Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm typaramseq
+        Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm styparamseq
 
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
@@ -271,7 +282,7 @@ end = struct
         type_params  = otyparams;
         constructors = ctors;
       } ->
-        let typaramseq =
+        let styparamseq =
           match otyparams with
           | []     -> ""
           | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
@@ -292,13 +303,12 @@ end = struct
                     Printf.sprintf "\"arg\" -> Json.toJson(arg)(%s)" senc
                   in
                   Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" ctor slabel sarg
-                    (* -- TODO: should be, for example, `Position.unapply[Num]`, not `Position[Num].unapply` *)
             in
             Alist.extend acc s
 
           ) ctors Alist.empty |> Alist.to_list |> String.concat " "
         in
-        Printf.sprintf "(Writes.apply { (x: %s%s) => x match { %s } })" tynm typaramseq scases
+        Printf.sprintf "(Writes.apply { (x: %s%s) => x match { %s } })" tynm styparamseq scases
 
   let make_parameter_string otyparams =
     let styparams = otyparams |> List.map (function TypeParameter(s) -> s) in
@@ -320,11 +330,11 @@ end = struct
             let s =
               match otyopt with
               | None ->
-                  Printf.sprintf "case class %s%s() extends %s\n" ctornm paramseq smain
+                  Printf.sprintf "  case class %s%s() extends %s\n" ctornm paramseq smain
 
               | Some(oty) ->
                   let sty = stringify_type oty in
-                  Printf.sprintf "case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
+                  Printf.sprintf "  case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
             in
             Alist.extend acc s
           ) ctors Alist.empty |> Alist.to_list
@@ -412,7 +422,7 @@ let generate_message_encoder : message -> Output.tree =
   generate_message_decoder_or_encoder Output.global_writes
 
 
-let decoder_of_record (tyid : Output.type_identifier) (record : record) : Output.tree =
+let decoder_of_record (tyid : Output.type_identifier) (otyparams : Output.type_parameter list) (record : record) : Output.tree =
   let entries =
     record |> RecordMap.map (fun msg ->
       let otree_decoder = generate_message_decoder msg in
@@ -420,7 +430,7 @@ let decoder_of_record (tyid : Output.type_identifier) (record : record) : Output
       (typ, otree_decoder)
     )
   in
-  Output.make_record_reads tyid entries
+  Output.make_record_reads tyid otyparams entries
 
 
 let encoder_of_record (tyid : Output.type_identifier) (otyparams : Output.type_parameter list) (record : record) : Output.tree =
@@ -506,7 +516,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             Output.define_record_case_class otyname otyparams fields
           in
           let odecl_reads =
-            let otree_decoder = decoder_of_record otyname record in
+            let otree_decoder = decoder_of_record otyname otyparams record in
             let ovar_reads = Output.global_reads name in
             let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
@@ -569,7 +579,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
   in
   let sdecls =
     odecls |> List.map (fun odecl ->
-      "  " ^ Output.stringify_declaration odecl ^ "\n\n"
+      "  " ^ Output.stringify_declaration odecl ^ "\n"
     )
   in
   List.concat [
@@ -582,8 +592,13 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "import play.api.libs.functional.syntax._\n";
       "\n";
       Format.sprintf "object %s {\n" module_name;
-      "  def intReads() = IntReads\n";    (* TODO; make this less ad-hoc *)
-      "  def intWrites() = IntWrites\n";  (* TODO; make this less ad-hoc *)
+      "  def boolReads() = BooleanReads\n";     (* TODO; make this less ad-hoc *)
+      "  def boolWrites() = BooleanWrites\n";   (* TODO; make this less ad-hoc *)
+      "  def intReads() = IntReads\n";          (* TODO; make this less ad-hoc *)
+      "  def intWrites() = IntWrites\n";        (* TODO; make this less ad-hoc *)
+      "  def stringReads() = StringReads\n";    (* TODO; make this less ad-hoc *)
+      "  def stringWrites() = StringWrites\n";  (* TODO; make this less ad-hoc *)
+      "\n";
     ];
     sdecls;
     [
