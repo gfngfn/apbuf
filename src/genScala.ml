@@ -35,46 +35,60 @@ end = struct
   type identifier =
     | Var of string
 
+
   let global_reads name =
     Var(Name.lower_camel_case name ^ "Reads")
+
 
   let global_writes name =
     Var(Name.lower_camel_case name ^ "Writes")
 
+
   let local_for_parameter x =
     Var("local_param_" ^ x)
+
 
   type type_identifier =
     | TypeIdentifier of string
 
+
   let type_identifier (name : Name.t) =
     TypeIdentifier(Name.upper_camel_case name)
+
 
   type type_parameter =
     | TypeParameter of string
 
+
   let type_parameter (x : Types.variable) =
     TypeParameter(x)
+
 
   type typ =
     | TypeName     of type_identifier * typ list
     | TypeVariable of type_parameter
     | FuncType     of typ * typ
 
+
   let type_variable tv =
     TypeVariable(tv)
+
 
   let type_name tyident typs =
     TypeName(tyident, typs)
 
+
   let reads_type oty =
     TypeName(TypeIdentifier("Reads"), [oty])
+
 
   let writes_type oty =
     TypeName(TypeIdentifier("Writes"), [oty])
 
+
   let func_type oty1 oty2 =
     FuncType(oty1, oty2)
+
 
   let rec stringify_type (oty : typ) =
     match oty with
@@ -119,11 +133,14 @@ end = struct
         constructors : ((typ * tree) option) VariantMap.t;
       }
 
+
   let identifier ident =
     Identifier(ident)
 
+
   let application ot ots =
     Application{ applied = ot; arguments = ots; }
+
 
   let make_record_reads tyid otyparams entries =
     RecordReads{
@@ -132,6 +149,7 @@ end = struct
       entries     = entries;
     }
 
+
   let make_record_writes tyid otyparams entries =
     RecordWrites{
       type_name   = tyid;
@@ -139,11 +157,13 @@ end = struct
       entries     = entries;
     }
 
+
   let make_variant_reads tyid ctors =
     VariantReads{
       type_name    = tyid;
       constructors = ctors;
     }
+
 
   let make_variant_writes tyid otyparams ctors =
     VariantWrites{
@@ -151,6 +171,7 @@ end = struct
       type_params  = otyparams;
       constructors = ctors;
     }
+
 
   type declaration =
     | DefVariantCaseClass of {
@@ -176,12 +197,14 @@ end = struct
         body        : tree;
       }
 
+
   let define_variant_case_class tyid typarams ctors =
     DefVariantCaseClass{
       type_name    = tyid;
       type_params  = typarams;
       constructors = ctors;
     }
+
 
   let define_record_case_class tyid typarams fields =
     DefRecordCaseClass{
@@ -190,12 +213,14 @@ end = struct
       fields      = fields;
     }
 
+
   let define_type_alias tyid typarams oty =
     DefTypeAlias{
       type_name   = tyid;
       type_params = typarams;
       type_real   = oty;
     }
+
 
   let define_method ident otyparams vtparams otyret otree =
     DefMethod{
@@ -205,6 +230,7 @@ end = struct
       params      = vtparams;
       body        = otree;
     }
+
 
   let rec stringify_tree (otree : tree) =
     match otree with
@@ -310,11 +336,13 @@ end = struct
         in
         Printf.sprintf "(Writes.apply { (x: %s%s) => x match { %s } })" tynm styparamseq scases
 
+
   let make_parameter_string otyparams =
     let styparams = otyparams |> List.map (function TypeParameter(s) -> s) in
     match styparams with
     | []     -> ""
     | _ :: _ -> "[" ^ (String.concat ", " styparams) ^ "]"
+
 
   let stringify_declaration (odecl : declaration) =
     match odecl with

@@ -52,13 +52,16 @@ end = struct
   let label_key    = "_label"
   let argument_key = "_arg"
 
+
   type identifier =
     | Var of string
+
 
   type pattern =
     | StringPattern of string
     | ConstructorPattern of constructor * pattern option
     | IdentifierPattern of identifier
+
 
   type tree =
     | Identifier of identifier
@@ -84,17 +87,21 @@ end = struct
         branches : (pattern * tree) list;
       }
 
+
   type type_identifier =
     | TypeIdentifier of string
 
+
   type type_parameter =
     | TypeParameter of string
+
 
   type typ =
     | TypeName     of type_identifier * typ list
     | TypeVariable of type_parameter
     | FuncType     of typ * typ
     | RecordType   of (Key.t * typ) list
+
 
   type declaration =
     | DefVal of {
@@ -114,8 +121,10 @@ end = struct
         patterns   : (Types.constructor * typ option) list;
       }
 
+
   let identifier ovar =
     Identifier(ovar)
+
 
   let application ovar otrees =
     Application{
@@ -123,20 +132,25 @@ end = struct
       arguments = otrees;
     }
 
+
   let abstraction ovar otree =
     Abstract{
       variable = ovar;
       body     = otree;
     }
 
+
   let string_literal s =
     StringLiteral(s)
+
 
   let constructor ctor =
     Constructor(ctor)
 
+
   let record orcd =
     Record(orcd)
+
 
   let record_field_access otree key =
     let skey = Key.lower_camel_case key in
@@ -145,18 +159,23 @@ end = struct
       key    = skey;
     }
 
+
   let global_decoder name =
     Var("decode" ^ Name.upper_camel_case name)
 
+
   let global_encoder name =
     Var("encode" ^ Name.upper_camel_case name)
+
 
   let local_for_key key =
     let s = Key.snake_case key in
     Var("local_key_" ^ s)
 
+
   let local_for_parameter x =
     Var("local_param_" ^ x)
+
 
   let type_identifier name =
     let s =
@@ -170,8 +189,10 @@ end = struct
     in
     TypeIdentifier(s)
 
+
   let type_parameter x =
     TypeParameter("typaram_" ^ x)
+
 
   let decode_field_access_raw (skey : string) (otree : tree) : tree =
     Application{
@@ -179,8 +200,10 @@ end = struct
       arguments = [ StringLiteral(skey); otree; ];
     }
 
+
   let decode_field_access (key : Key.t) (otree : tree) : tree =
     decode_field_access_raw (Key.lower_camel_case key) otree
+
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
     Application{
@@ -188,11 +211,13 @@ end = struct
       arguments = [ otree_cont; otree_dec; ];
     }
 
+
   let map (otree_map : tree) (otree_dec : tree) : tree =
     Application{
       applied   = Identifier(Var("Json.Decode.map"));
       arguments = [ otree_map; otree_dec; ];
     }
+
 
   let succeed (otree : tree) =
     Application{
@@ -200,17 +225,20 @@ end = struct
       arguments = [ otree; ];
     }
 
+
   let encode_record (otree : tree) =
     Application{
       applied   = Identifier(Var("Json.Encode.object"));
       arguments = [ otree ];
     }
 
+
   let access_argument (otree : tree) =
     Application{
       applied = Identifier(Var("Json.Decode.field"));
       arguments = [ StringLiteral(argument_key); otree; ]
     }
+
 
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
@@ -371,7 +399,6 @@ end = struct
         Format.sprintf "{ %s }" sr
 
 
-
   let stringify_declaration (odecl : declaration) : string =
     match odecl with
     | DefVal{
@@ -427,7 +454,8 @@ end = struct
     FuncType(ty, TypeName(TypeIdentifier("Json.Encode.Value"), []))
 
 
-  let base s = (TypeName(type_identifier s, []))
+  let base s =
+    TypeName(type_identifier s, [])
 
 
   let built_in_decoder (builtin : built_in) : declaration =
@@ -482,6 +510,7 @@ end = struct
           body       = branching omap;
         }
 
+
   let encode_variant (label : string) (argopt : tree option) : tree =
     let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
     let otree_label_keyval = tuple [ string_literal label_key; otree_label ] in
@@ -491,6 +520,7 @@ end = struct
       | Some(arg) -> [ otree_label_keyval; tuple [ string_literal argument_key; arg ] ]
     in
     encode_record (list entries)
+
 
   let encode_branching (variant : (tree option) VariantMap.t) : tree =
     let ovar_toenc = Var("temp") in
@@ -517,11 +547,14 @@ end = struct
       }
     }
 
+
   let encoded_none : tree =
     encode_variant "None" None
 
+
   let encoded_some (otree_arg : tree) : tree =
     encode_variant "Some" (Some(otree_arg))
+
 
   let built_in_encoder (builtin : built_in) : declaration =
     let enc = encoder_type in
@@ -584,17 +617,22 @@ end = struct
           body       = body;
         }
 
+
   let type_name (ti : type_identifier) (tyargs : typ list) : typ =
     TypeName(ti, tyargs)
+
 
   let type_variable (tp : type_parameter) : typ =
     TypeVariable(tp)
 
+
   let record_type (tyrcd : (Key.t * typ) list) : typ =
     RecordType(tyrcd)
 
+
   let function_type (ty1 : typ) (ty2 : typ) : typ =
     FuncType(ty1, ty2)
+
 
   let define_type_alias (ti : type_identifier) (typarams : type_parameter list) (ty : typ) : declaration =
     DefTypeAlias{
@@ -602,6 +640,7 @@ end = struct
       parameters = typarams;
       body       = ty;
     }
+
 
   let define_data_type (ti : type_identifier) (typarams : type_parameter list) (defs : (Types.constructor * typ option) list) =
     DefDataType{
