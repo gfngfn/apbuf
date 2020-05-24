@@ -578,9 +578,12 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "\n";
       "import play.api.libs.json._\n";
       "import play.api.libs.json.Reads._\n";
+      "import play.api.libs.json.Writes._\n";
       "import play.api.libs.functional.syntax._\n";
       "\n";
       Format.sprintf "object %s {\n" module_name;
+      "  def intReads() = IntReads\n";    (* TODO; make this less ad-hoc *)
+      "  def intWrites() = IntWrites\n";  (* TODO; make this less ad-hoc *)
     ];
     sdecls;
     [
