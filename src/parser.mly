@@ -18,7 +18,7 @@
 %%
 
 toplevel:
-| meta=meta; decls=list(msgdecl); EOI { (meta, decls) }
+| metas=list(meta); decls=list(msgdecl); EOI { (metas, decls) }
 ;
 meta:
 | META_OUTPUT; s=STRING; COLON; path=STRING { MetaOutput(s, path) }

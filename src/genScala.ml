@@ -20,14 +20,15 @@ module Output : sig
   type tree
   val identifier : identifier -> tree
   val application : tree -> tree list -> tree
-  val make_record_reads : type_identifier -> (typ * tree) RecordMap.t -> tree
-  val make_record_writes : type_identifier -> (typ * tree) RecordMap.t -> tree
+  val make_record_reads : type_identifier -> type_parameter list -> (typ * tree) RecordMap.t -> tree
+  val make_record_writes : type_identifier -> type_parameter list -> (typ * tree) RecordMap.t -> tree
   val make_variant_reads : type_identifier -> ((typ * tree) option) VariantMap.t -> tree
+  val make_variant_writes : type_identifier -> type_parameter list -> ((typ * tree) option) VariantMap.t -> tree
   type declaration
   val define_variant_case_class : type_identifier -> type_parameter list -> (typ option) VariantMap.t -> declaration
   val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
-  val define_method : identifier -> (identifier * typ) list -> typ -> tree -> declaration
+  val define_method : identifier -> type_parameter list -> (identifier * typ) list -> typ -> tree -> declaration
   val stringify_declaration : declaration -> string
 end = struct
 
@@ -78,7 +79,11 @@ end = struct
   let rec stringify_type (oty : typ) =
     match oty with
     | TypeName(TypeIdentifier(tynm), tyargs) ->
-        Printf.sprintf "%s[%s]" tynm (tyargs |> List.map stringify_type |> String.concat ", ")
+        begin
+          match tyargs with
+          | []     -> tynm
+          | _ :: _ -> Printf.sprintf "%s[%s]" tynm (tyargs |> List.map stringify_type |> String.concat ", ")
+        end
 
     | TypeVariable(TypeParameter(x)) ->
         x
@@ -95,16 +100,23 @@ end = struct
         arguments : tree list;
       }
     | RecordReads of {
-        type_name : type_identifier;
-        entries   : (typ * tree) RecordMap.t;
+        type_name   : type_identifier;
+        type_params : type_parameter list;
+        entries     : (typ * tree) RecordMap.t;
+      }
+    | RecordWrites of {
+        type_name   : type_identifier;
+        type_params : type_parameter list;
+        entries     : (typ * tree) RecordMap.t;
       }
     | VariantReads of {
         type_name    : type_identifier;
         constructors : ((typ * tree) option) VariantMap.t;
       }
-    | RecordWrites of {
-        type_name : type_identifier;
-        entries   : (typ * tree) RecordMap.t;
+    | VariantWrites of {
+        type_name    : type_identifier;
+        type_params  : type_parameter list;
+        constructors : ((typ * tree) option) VariantMap.t;
       }
 
   let identifier ident =
@@ -113,21 +125,30 @@ end = struct
   let application ot ots =
     Application{ applied = ot; arguments = ots; }
 
-  let make_record_reads tyid entries =
+  let make_record_reads tyid otyparams entries =
     RecordReads{
-      type_name = tyid;
-      entries   = entries;
+      type_name   = tyid;
+      type_params = otyparams;
+      entries     = entries;
     }
 
-  let make_record_writes tyid entries =
+  let make_record_writes tyid otyparams entries =
     RecordWrites{
-      type_name = tyid;
-      entries   = entries;
+      type_name   = tyid;
+      type_params = otyparams;
+      entries     = entries;
     }
 
   let make_variant_reads tyid ctors =
     VariantReads{
       type_name    = tyid;
+      constructors = ctors;
+    }
+
+  let make_variant_writes tyid otyparams ctors =
+    VariantWrites{
+      type_name    = tyid;
+      type_params  = otyparams;
       constructors = ctors;
     }
 
@@ -149,6 +170,7 @@ end = struct
       }
     | DefMethod of {
         method_name : identifier;
+        type_params : type_parameter list;
         params      : (identifier * typ) list;
         return_type : typ;
         body        : tree;
@@ -175,11 +197,12 @@ end = struct
       type_real   = oty;
     }
 
-  let define_method ident vtparams otyret otree =
+  let define_method ident otyparams vtparams otyret otree =
     DefMethod{
       method_name = ident;
-      params      = vtparams;
+      type_params = otyparams;
       return_type = otyret;
+      params      = vtparams;
       body        = otree;
     }
 
@@ -193,7 +216,16 @@ end = struct
         let sargs = otargs |> List.map stringify_tree in
         Printf.sprintf "%s(%s)" sfun (String.concat ", " sargs)
 
-    | RecordReads{ type_name = TypeIdentifier(tynm); entries = entries; } ->
+    | RecordReads{
+        type_name   = TypeIdentifier(tynm);
+        type_params = otyparams;
+        entries     = entries;
+      } ->
+        let styparamseq =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+        in
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
             let skey = Key.lower_camel_case key in
@@ -203,9 +235,13 @@ end = struct
             Alist.extend acc s
           ) entries Alist.empty |> Alist.to_list |> String.concat " and "
         in
-        Printf.sprintf "(%s)(%s.apply _)" smain tynm
+        Printf.sprintf "(%s)(%s.apply%s _)" smain tynm styparamseq
 
-    | RecordWrites{ type_name = TypeIdentifier(tynm); entries = entries; } ->
+    | RecordWrites{
+        type_name   = TypeIdentifier(tynm);
+        type_params = otyparams;
+        entries     = entries;
+      } ->
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
             let skey = Key.lower_camel_case key in
@@ -215,7 +251,12 @@ end = struct
             Alist.extend acc s
           ) entries Alist.empty |> Alist.to_list |> String.concat " and "
         in
-        Printf.sprintf "(%s)(unlift(%s.unapply))" smain tynm
+        let styparamseq =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+        in
+        Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm styparamseq
 
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
@@ -235,6 +276,39 @@ end = struct
           ) ctors Alist.empty |> Alist.to_list |> String.concat " "
         in
         Printf.sprintf "(JsPath \\ \"label\").read[String].flatMap { (label: String) => label match { %s }}" scases
+
+    | VariantWrites{
+        type_name    = TypeIdentifier(tynm);
+        type_params  = otyparams;
+        constructors = ctors;
+      } ->
+        let styparamseq =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+        in
+        let scases =
+          VariantMap.fold (fun ctor otreeopt acc ->
+            let s =
+              match otreeopt with
+              | None ->
+                  Printf.sprintf "case %s() => Json.obj(\"label\" -> JsString(\"%s\"))" ctor ctor
+
+              | Some(_oty, otree_encoder) ->
+                  let senc = stringify_tree otree_encoder in
+                  let slabel =
+                    Printf.sprintf "\"label\" -> JsString(\"%s\")" ctor
+                  in
+                  let sarg =
+                    Printf.sprintf "\"arg\" -> Json.toJson(arg)(%s)" senc
+                  in
+                  Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" ctor slabel sarg
+            in
+            Alist.extend acc s
+
+          ) ctors Alist.empty |> Alist.to_list |> String.concat " "
+        in
+        Printf.sprintf "(Writes.apply { (x: %s%s) => x match { %s } })" tynm styparamseq scases
 
   let make_parameter_string otyparams =
     let styparams = otyparams |> List.map (function TypeParameter(s) -> s) in
@@ -256,11 +330,11 @@ end = struct
             let s =
               match otyopt with
               | None ->
-                  Printf.sprintf "case class %s%s() extends %s\n" ctornm paramseq smain
+                  Printf.sprintf "  case class %s%s() extends %s\n" ctornm paramseq smain
 
               | Some(oty) ->
                   let sty = stringify_type oty in
-                  Printf.sprintf "case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
+                  Printf.sprintf "  case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
             in
             Alist.extend acc s
           ) ctors Alist.empty |> Alist.to_list
@@ -296,19 +370,26 @@ end = struct
 
     | DefMethod{
         method_name = Var(varnm);
-        return_type = _oty;
+        type_params = otyparams;
+        return_type = otyret;
         params      = ovtparams;
         body        = otree;
       } ->
+        let styret = stringify_type otyret in
         let sparams =
           ovtparams |> List.map (function (Var(sv), oty) ->
             let sty = stringify_type oty in
             Printf.sprintf "%s: %s" sv sty
           )
         in
+        let typaramseq =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+        in
         let paramseq = String.concat ", " sparams in
         let sbody = stringify_tree otree in
-        Printf.sprintf "def %s(%s) = { %s }\n" varnm paramseq sbody
+        Printf.sprintf "def %s%s(%s): %s = { %s }\n" varnm typaramseq paramseq styret sbody
 
 end
 
@@ -323,38 +404,66 @@ let rec generate_message_type (msg : message) : Output.typ =
       Output.type_name (Output.type_identifier name) typs
 
 
-let rec generate_message_decoder (msg : message) : Output.tree =
+let rec generate_message_decoder_or_encoder (namef : Name.t -> Output.identifier) (msg : message) : Output.tree =
   match msg with
   | Variable((_, x)) ->
       Output.identifier (Output.local_for_parameter x)
 
   | Name((_, name), args) ->
-      let otrees = args |> List.map generate_message_decoder in
-      Output.application (Output.identifier (Output.global_reads name)) otrees
+      let otrees = args |> List.map (generate_message_decoder_or_encoder namef) in
+      Output.application (Output.identifier (namef name)) otrees
 
 
-let decoder_and_encoder_of_record (tyid : Output.type_identifier) (record : record) : Output.tree * Output.tree =
+let generate_message_decoder : message -> Output.tree =
+  generate_message_decoder_or_encoder Output.global_reads
+
+
+let generate_message_encoder : message -> Output.tree =
+  generate_message_decoder_or_encoder Output.global_writes
+
+
+let decoder_of_record (tyid : Output.type_identifier) (otyparams : Output.type_parameter list) (record : record) : Output.tree =
   let entries =
-    record |> RecordMap.map (fun vmsg ->
-      let otree = generate_message_decoder vmsg in
-      let typ = generate_message_type vmsg in
-      (typ, otree)
+    record |> RecordMap.map (fun msg ->
+      let otree_decoder = generate_message_decoder msg in
+      let typ = generate_message_type msg in
+      (typ, otree_decoder)
     )
   in
-  let dec = Output.make_record_reads tyid entries in
-  let enc = Output.make_record_writes tyid entries in
-  (dec, enc)
+  Output.make_record_reads tyid otyparams entries
+
+
+let encoder_of_record (tyid : Output.type_identifier) (otyparams : Output.type_parameter list) (record : record) : Output.tree =
+  let entries =
+    record |> RecordMap.map (fun msg ->
+      let otree_encoder = generate_message_encoder msg in
+      let typ = generate_message_type msg in
+      (typ, otree_encoder)
+    )
+  in
+  Output.make_record_writes tyid otyparams entries
 
 
 let decoder_of_variant (tyid : Output.type_identifier) (variant : variant) : Output.tree =
   let ctors =
     variant |> VariantMap.map (Option.map (fun msg ->
       let oty = generate_message_type msg in
-      let otree = generate_message_decoder msg in
-      (oty, otree)
+      let otree_decoder = generate_message_decoder msg in
+      (oty, otree_decoder)
     ))
   in
   Output.make_variant_reads tyid ctors
+
+
+let encoder_of_variant (tyid : Output.type_identifier) (otyparams : Output.type_parameter list) (variant : variant) : Output.tree =
+  let ctors =
+    variant |> VariantMap.map (Option.map (fun msg ->
+      let oty = generate_message_type msg in
+      let otree_encoder = generate_message_encoder msg in
+      (oty, otree_encoder)
+    ))
+  in
+  Output.make_variant_writes tyid otyparams ctors
 
 
 let generate (module_name : string) (package_name : string) (decls : declarations) =
@@ -362,11 +471,12 @@ let generate (module_name : string) (package_name : string) (decls : declaration
     DeclMap.fold (fun name def acc ->
       match def.def_main with
       | BuiltIn(_builtin) ->
-          failwith "TODO: generate, BuiltIn"
+          acc  (* TEMPORARY; TODO *)
 
       | GivenNormal(msg) ->
           let otyname = Output.type_identifier name in
           let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+          let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
           let odecl_type : Output.declaration =
             let oty = generate_message_type msg in
             Output.define_type_alias otyname otyparams oty
@@ -379,20 +489,21 @@ let generate (module_name : string) (package_name : string) (decls : declaration
                 (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
               )
             in
-            let otyret = Output.reads_type (Output.type_name otyname (otyparams |> List.map Output.type_variable)) in
-            let otree = generate_message_decoder msg in
-            Output.define_method ovar_reads ovtparams otyret otree
+            let otyret = Output.reads_type otymsg in
+            let otree_decoder = generate_message_decoder msg in
+            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
           in
           let odecl_writes : Output.declaration =
-            let _ovar_writes = Output.global_writes name in
-            let _ovtparams =
+            let ovar_writes = Output.global_writes name in
+            let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
-                let _otyparam = Output.type_parameter x in
-                let oty = failwith "TODO: GivenNormal, type for writer parameter" in
-                (Output.local_for_parameter x, oty)
+                let otyparam = Output.type_parameter x in
+                (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
               )
             in
-            failwith "TODO: GivenNormal, odecl_writes"
+            let otree_encoder = generate_message_encoder msg in
+            let otyret = Output.writes_type otymsg in
+            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
@@ -404,8 +515,8 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             let fields = record |> RecordMap.map generate_message_type in
             Output.define_record_case_class otyname otyparams fields
           in
-          let (otree_decoder, otree_encoder) = decoder_and_encoder_of_record otyname record in
           let odecl_reads =
+            let otree_decoder = decoder_of_record otyname otyparams record in
             let ovar_reads = Output.global_reads name in
             let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
@@ -414,9 +525,10 @@ let generate (module_name : string) (package_name : string) (decls : declaration
               )
             in
             let otyret = Output.reads_type otymsg in
-            Output.define_method ovar_reads ovtparams otyret otree_decoder
+            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
           in
           let odecl_writes =
+            let otree_encoder = encoder_of_record otyname otyparams record in
             let ovar_writes = Output.global_writes name in
             let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
@@ -425,18 +537,20 @@ let generate (module_name : string) (package_name : string) (decls : declaration
               )
             in
             let otyret = Output.writes_type otymsg in
-            Output.define_method ovar_writes ovtparams otyret otree_encoder
+            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
       | GivenVariant(variant) ->
           let otyname = Output.type_identifier name in
           let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+          let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
           let odecl_type : Output.declaration =
             let ctors = variant |> VariantMap.map (Option.map generate_message_type) in
             Output.define_variant_case_class otyname otyparams ctors
           in
           let odecl_reads : Output.declaration =
+            let otree_decoder = decoder_of_variant otyname variant in
             let ovar_reads = Output.global_reads name in
             let ovtparams =
               def.def_params |> List.map (fun (_, x) ->
@@ -444,18 +558,28 @@ let generate (module_name : string) (package_name : string) (decls : declaration
                 (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
               )
             in
-            let otyret = Output.reads_type (Output.type_name otyname (otyparams |> List.map Output.type_variable)) in
-            let otree = decoder_of_variant otyname variant in
-            Output.define_method ovar_reads ovtparams otyret otree
+            let otyret = Output.reads_type otymsg in
+            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
           in
-          let odecl_writes : Output.declaration = failwith "TODO: GivenVariant, odecl_writes" in
+          let odecl_writes : Output.declaration =
+            let otree_encoder = encoder_of_variant otyname otyparams variant in
+            let ovar_writes = Output.global_writes name in
+            let ovtparams =
+              def.def_params |> List.map (fun (_, x) ->
+                let otyparam = Output.type_parameter x in
+                (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
+              )
+            in
+            let otyret = Output.writes_type otymsg in
+            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
+          in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
     ) decls Alist.empty |> Alist.to_list
   in
   let sdecls =
     odecls |> List.map (fun odecl ->
-      "  " ^ Output.stringify_declaration odecl ^ "\n\n"
+      "  " ^ Output.stringify_declaration odecl ^ "\n"
     )
   in
   List.concat [
@@ -464,9 +588,17 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "\n";
       "import play.api.libs.json._\n";
       "import play.api.libs.json.Reads._\n";
+      "import play.api.libs.json.Writes._\n";
       "import play.api.libs.functional.syntax._\n";
       "\n";
       Format.sprintf "object %s {\n" module_name;
+      "  def boolReads() = BooleanReads\n";     (* TODO; make this less ad-hoc *)
+      "  def boolWrites() = BooleanWrites\n";   (* TODO; make this less ad-hoc *)
+      "  def intReads() = IntReads\n";          (* TODO; make this less ad-hoc *)
+      "  def intWrites() = IntWrites\n";        (* TODO; make this less ad-hoc *)
+      "  def stringReads() = StringReads\n";    (* TODO; make this less ad-hoc *)
+      "  def stringWrites() = StringWrites\n";  (* TODO; make this less ad-hoc *)
+      "\n";
     ];
     sdecls;
     [
