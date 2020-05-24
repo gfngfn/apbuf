@@ -11,6 +11,7 @@ In exchange for its clean representation, APBuf at least currently does not purs
   - JSON
 * Currently supported target languages:
   - Elm
+  - Scala
 
 
 ## Example
@@ -73,16 +74,23 @@ encodeRational : Rational -> Value
 ## Syntax of configuration files
 
 ```
-toplevel ::=
-  | meta decls
+s ::= (a string literal enclosed by double quatations)
+ident ::= (a lowercased identifier)
+x ::= (a lowercased identifier with a preceding dollar sign)
 
-meta ::=
-  | '@output' s ':' s
+toplevel ::=
+  | metas decls
+
+metas ::=
+  | '@output' s ':' s metas
+  | (empty)
 
 // declarations
 decls ::=
   | ident ':=' msg decls
   | ident '(' params ')' ':=' msg decls
+  | ident ':=' '{' record '}' decls
+  | ident '(' params ')' ':=' '{' record '}' decls
   | ident ':=' variant decls
   | ident '(' params ')' ':=' variant decls
   | (empty)
@@ -97,10 +105,9 @@ paramtail ::=
 
 // a message format definition
 msg ::=
+  | x
   | ident
-  | ident '(' msg argtail ')'
-  | '{' record '}'
-  | '(' variant ')'
+  | ident '(' args ')'
 
 args ::=
   | msg argtail
