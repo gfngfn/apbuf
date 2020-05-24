@@ -19,7 +19,8 @@ In exchange for its clean representation, APBuf at least currently does not purs
 The following configuration file:
 
 ```
-@output "elm": "./gen"
+@output "elm": "./elm/src"
+@output "scala": "./scala_play/app/controllers"
 
 geometry :=
   | Rectangle : rectangle_info(int)
@@ -70,7 +71,7 @@ decodeRational : Decoder Rational
 encodeRational : Rational -> Value
 ```
 
-and also generates the implementation in Scala of the following API:
+and also generates an implementation of the following API in Scala:
 
 ```scala
 package apbufgen
@@ -106,7 +107,7 @@ object APBufGen {
 ## Syntax of configuration files
 
 ```
-s ::= (a string literal enclosed by double quatations)
+s ::= (a string literal enclosed by double quotation marks)
 ident ::= (a lowercased identifier)
 x ::= (a lowercased identifier with a preceding dollar sign)
 
