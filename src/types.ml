@@ -53,7 +53,7 @@ type parsed_declarations = (string ranged * parsed_definition) list
 type meta_spec =
   | MetaOutput of string ranged * string ranged
 
-type top_level = meta_spec * parsed_declarations
+type top_level = meta_spec list * parsed_declarations
 
 module RecordMap = Map.Make(Key)
 

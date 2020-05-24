@@ -49,23 +49,36 @@ let generate_scala (dir_out : string) (decls : declarations) : unit =
   print_endline "done."
 
 
-let output_loop dir_in meta decls =
+let output_loop dir_in (metas : meta_spec list) (decls : declarations) =
   let open ResultMonad in
-  match meta with
-  | MetaOutput((_, "elm"), (_, dir)) ->
-      validate_declarations decls >>= fun () ->
-      let dir_out =
-        if Filename.is_relative dir then
-          Filename.concat dir_in dir
-        else
-          dir
-      in
-      generate_elm dir_out decls;
-      return ()
+  metas |> List.fold_left (fun prev meta ->
+    prev >>= fun () ->
+    match meta with
+    | MetaOutput((_, "elm"), (_, dir)) ->
+        validate_declarations decls >>= fun () ->
+        let dir_out =
+          if Filename.is_relative dir then
+            Filename.concat dir_in dir
+          else
+            dir
+        in
+        generate_elm dir_out decls;
+        return ()
 
-  | MetaOutput((_, other), _) ->
-      error (UnsupportedTarget{ target = other; })
+    | MetaOutput((_, "scala"), (_, dir)) ->
+        validate_declarations decls >>= fun () ->
+        let dir_out =
+          if Filename.is_relative dir then
+            Filename.concat dir_in dir
+          else
+            dir
+        in
+        generate_scala dir_out decls;
+        return ()
 
+    | MetaOutput((_, other), _) ->
+        error (UnsupportedTarget{ target = other; })
+  ) (return ())
 
 
 (** This is the core part of the program.
