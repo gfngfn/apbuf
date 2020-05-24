@@ -1,5 +1,5 @@
 @output "elm": "./gen"
-@output "scala": "./gen"
+@output "scala": "./gen/play-scala-seed/app/controllers"
 
 geometry :=
   | Rectangle : rectangle_info(int)
