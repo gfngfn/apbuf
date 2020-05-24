@@ -75,12 +75,18 @@ and also generates the implementation in Scala of the following API:
 ```scala
 package apbufgen
 
+import play.api.libs.json._
+
 object APBufGen {
   sealed trait Geometry
-  case class Circle(arg: CircleInfo[Int, Rational]) extends Geometry
   case class Rectangle(arg: RectangleInfo[Int]) extends Geometry
+  case class Circle(arg: CircleInfo[Int, Rational]) extends Geometry
   def geometryReads(): Reads[Geometry]
   def geometryWrites(): Writes[Geometry]
+
+  case class RectangleInfo[Num](lowerRight: Position[Num], upperLeft: Position[Num])
+  def rectangleInfoReads[Num](Reads[Num]): Reads[RectangleInfo[Num]]
+  def rectangleInfoWrites[Num](Writes[Num]): Writes[RectangleInfo[Num]]
 
   case class CircleInfo[Cnum, Rnum](center: Position[Cnum], radius: Rnum)
   def circleInfoReads[Cnum, Rnum](Reads[Cnum], Reads[Rnum]): Reads[CircleInfo[Cnum, Rnum]]
@@ -93,10 +99,6 @@ object APBufGen {
   case class Rational(denominator: Int, numerator: Int)
   def rationalReads(): Reads[Rational]
   def rationalWrites(): Writes[Rational]
-
-  case class RectangleInfo[Num](lowerRight: Position[Num], upperLeft: Position[Num])
-  def rectangleInfoReads[Num](Reads[Num]): Reads[RectangleInfo[Num]]
-  def rectangleInfoWrites[Num](Writes[Num]): Writes[RectangleInfo[Num]]
 }
 ```
 
