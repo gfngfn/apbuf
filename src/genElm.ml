@@ -5,11 +5,11 @@ open Types
 module Output : sig
 
   type identifier
+  val global_decoder : Name.t -> identifier
+  val global_encoder : Name.t -> identifier
+  val local_for_key : Key.t -> identifier
+  val local_for_parameter : Types.variable -> identifier
   type tree
-  type type_identifier
-  type type_parameter
-  type typ
-  type declaration
   val identifier : identifier -> tree
   val application : identifier -> tree list -> tree
   val general_application : tree -> tree -> tree
@@ -21,12 +21,6 @@ module Output : sig
   val record : tree RecordMap.t -> tree
   val record_field_access : tree -> Key.t -> tree
   val branching : tree VariantMap.t -> tree
-  val global_decoder : Name.t -> identifier
-  val global_encoder : Name.t -> identifier
-  val local_for_key : Key.t -> identifier
-  val local_for_parameter : Types.variable -> identifier
-  val type_identifier : Name.t -> type_identifier
-  val type_parameter : Types.variable -> type_parameter
   val decode_field_access : Key.t -> tree -> tree
   val access_argument : tree -> tree
   val and_then : tree -> tree -> tree
@@ -34,16 +28,22 @@ module Output : sig
   val succeed : tree -> tree
   val encode_record : tree -> tree
   val encode_branching : (tree option) VariantMap.t -> tree
-  val stringify_declaration : declaration -> string
-  val define_value : identifier -> typ -> identifier list -> tree -> declaration
-  val built_in_decoder : built_in -> declaration
-  val built_in_encoder : built_in -> declaration
+  type type_identifier
+  val type_identifier : Name.t -> type_identifier
+  type type_parameter
+  val type_parameter : Types.variable -> type_parameter
+  type typ
   val type_name : type_identifier -> typ list -> typ
   val type_variable : type_parameter -> typ
   val record_type : (Key.t * typ) list -> typ
   val function_type : typ -> typ -> typ
   val decoder_type : typ -> typ
   val encoder_type : typ -> typ
+  type declaration
+  val stringify_declaration : declaration -> string
+  val define_value : identifier -> typ -> identifier list -> tree -> declaration
+  val built_in_decoder : built_in -> declaration
+  val built_in_encoder : built_in -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
   val define_data_type : type_identifier -> type_parameter list -> (Types.constructor * typ option) list -> declaration
 
@@ -57,10 +57,27 @@ end = struct
     | Var of string
 
 
+  let global_decoder name =
+    Var("decode" ^ Name.upper_camel_case name)
+
+
+  let global_encoder name =
+    Var("encode" ^ Name.upper_camel_case name)
+
+
+  let local_for_key key =
+    let s = Key.snake_case key in
+    Var("local_key_" ^ s)
+
+
+  let local_for_parameter x =
+    Var("local_param_" ^ x)
+
+
   type pattern =
-    | StringPattern of string
+    | StringPattern      of string
     | ConstructorPattern of constructor * pattern option
-    | IdentifierPattern of identifier
+    | IdentifierPattern  of identifier
 
 
   type tree =
@@ -85,40 +102,6 @@ end = struct
     | Case of {
         subject  : tree;
         branches : (pattern * tree) list;
-      }
-
-
-  type type_identifier =
-    | TypeIdentifier of string
-
-
-  type type_parameter =
-    | TypeParameter of string
-
-
-  type typ =
-    | TypeName     of type_identifier * typ list
-    | TypeVariable of type_parameter
-    | FuncType     of typ * typ
-    | RecordType   of (Key.t * typ) list
-
-
-  type declaration =
-    | DefVal of {
-        val_name   : identifier;
-        typ        : typ;
-        parameters : identifier list;
-        body       : tree;
-      }
-    | DefTypeAlias of {
-        type_name  : type_identifier;
-        parameters : type_parameter list;
-        body       : typ;
-      }
-    | DefDataType of {
-        type_name  : type_identifier;
-        parameters : type_parameter list;
-        patterns   : (Types.constructor * typ option) list;
       }
 
 
@@ -158,40 +141,6 @@ end = struct
       record = otree;
       key    = skey;
     }
-
-
-  let global_decoder name =
-    Var("decode" ^ Name.upper_camel_case name)
-
-
-  let global_encoder name =
-    Var("encode" ^ Name.upper_camel_case name)
-
-
-  let local_for_key key =
-    let s = Key.snake_case key in
-    Var("local_key_" ^ s)
-
-
-  let local_for_parameter x =
-    Var("local_param_" ^ x)
-
-
-  let type_identifier name =
-    let s =
-      match Name.original name with
-      | "bool"   -> "Bool"
-      | "int"    -> "Int"
-      | "string" -> "String"
-      | "list"   -> "List"
-      | "option" -> "Maybe"
-      | _        -> Name.upper_camel_case name
-    in
-    TypeIdentifier(s)
-
-
-  let type_parameter x =
-    TypeParameter("typaram_" ^ x)
 
 
   let decode_field_access_raw (skey : string) (otree : tree) : tree =
@@ -287,12 +236,152 @@ end = struct
     List(otrees)
 
 
+  let encode_variant (label : string) (argopt : tree option) : tree =
+    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
+    let otree_label_keyval = tuple [ string_literal label_key; otree_label ] in
+    let entries =
+      match argopt with
+      | None      -> [ otree_label_keyval ]
+      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal argument_key; arg ] ]
+    in
+    encode_record (list entries)
+
+
+  let encode_branching (variant : (tree option) VariantMap.t) : tree =
+    let ovar_toenc = Var("temp") in
+    let branches =
+      VariantMap.fold (fun ctor encopt acc ->
+        let ovar_toencsub = Var("sub") in
+        let (otreeopt, paramopt) =
+          match encopt with
+          | None ->
+              (None, None)
+
+          | Some(enc) ->
+              (Some(general_application enc (identifier ovar_toencsub)), Some(IdentifierPattern(ovar_toencsub)))
+        in
+        let pat = ConstructorPattern(ctor, paramopt) in
+        Alist.extend acc (pat, encode_variant ctor otreeopt)
+      ) variant Alist.empty |> Alist.to_list
+    in
+    Abstract{
+      variable = ovar_toenc;
+      body = Case{
+        subject  = Identifier(ovar_toenc);
+        branches = branches;
+      }
+    }
+
+
+  let encoded_none : tree =
+    encode_variant "None" None
+
+
+  let encoded_some (otree_arg : tree) : tree =
+    encode_variant "Some" (Some(otree_arg))
+
+
+  type type_identifier =
+    | TypeIdentifier of string
+
+
+  let type_identifier name =
+    let s =
+      match Name.original name with
+      | "bool"   -> "Bool"
+      | "int"    -> "Int"
+      | "string" -> "String"
+      | "list"   -> "List"
+      | "option" -> "Maybe"
+      | _        -> Name.upper_camel_case name
+    in
+    TypeIdentifier(s)
+
+
+  type type_parameter =
+    | TypeParameter of string
+
+
+  let type_parameter x =
+    TypeParameter("typaram_" ^ x)
+
+
+  type typ =
+    | TypeName     of type_identifier * typ list
+    | TypeVariable of type_parameter
+    | FuncType     of typ * typ
+    | RecordType   of (Key.t * typ) list
+
+
+  let decoder_type ty =
+    TypeName(TypeIdentifier("Json.Decode.Decoder"), [ty])
+
+
+  let encoder_type ty =
+    FuncType(ty, TypeName(TypeIdentifier("Json.Encode.Value"), []))
+
+
+  let base s =
+    TypeName(type_identifier s, [])
+
+
+  let type_name (ti : type_identifier) (tyargs : typ list) : typ =
+    TypeName(ti, tyargs)
+
+
+  let type_variable (tp : type_parameter) : typ =
+    TypeVariable(tp)
+
+
+  let record_type (tyrcd : (Key.t * typ) list) : typ =
+    RecordType(tyrcd)
+
+
+  let function_type (ty1 : typ) (ty2 : typ) : typ =
+    FuncType(ty1, ty2)
+
+
+  type declaration =
+    | DefVal of {
+        val_name   : identifier;
+        typ        : typ;
+        parameters : identifier list;
+        body       : tree;
+      }
+    | DefTypeAlias of {
+        type_name  : type_identifier;
+        parameters : type_parameter list;
+        body       : typ;
+      }
+    | DefDataType of {
+        type_name  : type_identifier;
+        parameters : type_parameter list;
+        patterns   : (Types.constructor * typ option) list;
+      }
+
+
   let define_value ovar typ oparams otree =
     DefVal{
       val_name   = ovar;
       typ        = typ;
       parameters = oparams;
       body       = otree;
+    }
+
+
+  let define_type_alias (ti : type_identifier) (typarams : type_parameter list) (ty : typ) : declaration =
+    DefTypeAlias{
+      type_name  = ti;
+      parameters = typarams;
+      body       = ty;
+    }
+
+
+  let define_data_type (ti : type_identifier) (typarams : type_parameter list) (defs : (Types.constructor * typ option) list) =
+    DefDataType{
+      type_name  = ti;
+      parameters = typarams;
+      patterns   = defs;
     }
 
 
@@ -446,18 +535,6 @@ end = struct
           (String.concat "\n" ss)
 
 
-  let decoder_type ty =
-    TypeName(TypeIdentifier("Json.Decode.Decoder"), [ty])
-
-
-  let encoder_type ty =
-    FuncType(ty, TypeName(TypeIdentifier("Json.Encode.Value"), []))
-
-
-  let base s =
-    TypeName(type_identifier s, [])
-
-
   let built_in_decoder (builtin : built_in) : declaration =
     let dec = decoder_type in
     let ( !$ ) tp = TypeVariable(tp) in
@@ -509,51 +586,6 @@ end = struct
           parameters = [ovar];
           body       = branching omap;
         }
-
-
-  let encode_variant (label : string) (argopt : tree option) : tree =
-    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
-    let otree_label_keyval = tuple [ string_literal label_key; otree_label ] in
-    let entries =
-      match argopt with
-      | None      -> [ otree_label_keyval ]
-      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal argument_key; arg ] ]
-    in
-    encode_record (list entries)
-
-
-  let encode_branching (variant : (tree option) VariantMap.t) : tree =
-    let ovar_toenc = Var("temp") in
-    let branches =
-      VariantMap.fold (fun ctor encopt acc ->
-        let ovar_toencsub = Var("sub") in
-        let (otreeopt, paramopt) =
-          match encopt with
-          | None ->
-              (None, None)
-
-          | Some(enc) ->
-              (Some(general_application enc (identifier ovar_toencsub)), Some(IdentifierPattern(ovar_toencsub)))
-        in
-        let pat = ConstructorPattern(ctor, paramopt) in
-        Alist.extend acc (pat, encode_variant ctor otreeopt)
-      ) variant Alist.empty |> Alist.to_list
-    in
-    Abstract{
-      variable = ovar_toenc;
-      body = Case{
-        subject  = Identifier(ovar_toenc);
-        branches = branches;
-      }
-    }
-
-
-  let encoded_none : tree =
-    encode_variant "None" None
-
-
-  let encoded_some (otree_arg : tree) : tree =
-    encode_variant "Some" (Some(otree_arg))
 
 
   let built_in_encoder (builtin : built_in) : declaration =
@@ -616,38 +648,6 @@ end = struct
           parameters = [ ovar_param ];
           body       = body;
         }
-
-
-  let type_name (ti : type_identifier) (tyargs : typ list) : typ =
-    TypeName(ti, tyargs)
-
-
-  let type_variable (tp : type_parameter) : typ =
-    TypeVariable(tp)
-
-
-  let record_type (tyrcd : (Key.t * typ) list) : typ =
-    RecordType(tyrcd)
-
-
-  let function_type (ty1 : typ) (ty2 : typ) : typ =
-    FuncType(ty1, ty2)
-
-
-  let define_type_alias (ti : type_identifier) (typarams : type_parameter list) (ty : typ) : declaration =
-    DefTypeAlias{
-      type_name  = ti;
-      parameters = typarams;
-      body       = ty;
-    }
-
-
-  let define_data_type (ti : type_identifier) (typarams : type_parameter list) (defs : (Types.constructor * typ option) list) =
-    DefDataType{
-      type_name  = ti;
-      parameters = typarams;
-      patterns   = defs;
-    }
 
 end
 
