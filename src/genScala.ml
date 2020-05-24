@@ -28,7 +28,7 @@ module Output : sig
   val define_variant_case_class : type_identifier -> type_parameter list -> (typ option) VariantMap.t -> declaration
   val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
-  val define_method : identifier -> (identifier * typ) list -> typ -> tree -> declaration
+  val define_method : identifier -> type_parameter list -> (identifier * typ) list -> typ -> tree -> declaration
   val stringify_declaration : declaration -> string
 end = struct
 
@@ -164,6 +164,7 @@ end = struct
       }
     | DefMethod of {
         method_name : identifier;
+        type_params : type_parameter list;
         params      : (identifier * typ) list;
         return_type : typ;
         body        : tree;
@@ -190,11 +191,12 @@ end = struct
       type_real   = oty;
     }
 
-  let define_method ident vtparams otyret otree =
+  let define_method ident otyparams vtparams otyret otree =
     DefMethod{
       method_name = ident;
-      params      = vtparams;
+      type_params = otyparams;
       return_type = otyret;
+      params      = vtparams;
       body        = otree;
     }
 
@@ -336,19 +338,26 @@ end = struct
 
     | DefMethod{
         method_name = Var(varnm);
-        return_type = _oty;
+        type_params = otyparams;
+        return_type = otyret;
         params      = ovtparams;
         body        = otree;
       } ->
+        let styret = stringify_type otyret in
         let sparams =
           ovtparams |> List.map (function (Var(sv), oty) ->
             let sty = stringify_type oty in
             Printf.sprintf "%s: %s" sv sty
           )
         in
+        let typaramseq =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+        in
         let paramseq = String.concat ", " sparams in
         let sbody = stringify_tree otree in
-        Printf.sprintf "def %s(%s) = { %s }\n" varnm paramseq sbody
+        Printf.sprintf "def %s%s(%s): %s = { %s }\n" varnm typaramseq paramseq styret sbody
 
 end
 
@@ -450,7 +459,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             in
             let otyret = Output.reads_type otymsg in
             let otree_decoder = generate_message_decoder msg in
-            Output.define_method ovar_reads ovtparams otyret otree_decoder
+            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
           in
           let odecl_writes : Output.declaration =
             let ovar_writes = Output.global_writes name in
@@ -462,7 +471,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             in
             let otree_encoder = generate_message_encoder msg in
             let otyret = Output.writes_type otymsg in
-            Output.define_method ovar_writes ovtparams otyret otree_encoder
+            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
@@ -484,7 +493,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
               )
             in
             let otyret = Output.reads_type otymsg in
-            Output.define_method ovar_reads ovtparams otyret otree_decoder
+            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
           in
           let odecl_writes =
             let otree_encoder = encoder_of_record otyname record in
@@ -496,7 +505,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
               )
             in
             let otyret = Output.writes_type otymsg in
-            Output.define_method ovar_writes ovtparams otyret otree_encoder
+            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
@@ -518,7 +527,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
               )
             in
             let otyret = Output.reads_type otymsg in
-            Output.define_method ovar_reads ovtparams otyret otree_decoder
+            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
           in
           let odecl_writes : Output.declaration =
             let otree_encoder = encoder_of_variant otyname variant in
@@ -530,7 +539,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
               )
             in
             let otyret = Output.writes_type otymsg in
-            Output.define_method ovar_writes ovtparams otyret otree_encoder
+            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
           Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
 
