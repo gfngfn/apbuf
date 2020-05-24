@@ -1,4 +1,4 @@
-@output "elm": "./gen"
+@output "elm": "./gen/elm/src"
 @output "scala": "./gen/play-scala-seed/app/controllers"
 
 geometry :=

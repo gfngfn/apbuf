@@ -1,5 +1,2 @@
-gen/*.elm
-gen/elm-stuff/
-gen/src/
-gen/elm.json
+gen/elm/
 gen/play-scala-seed/
