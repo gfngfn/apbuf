@@ -70,6 +70,36 @@ decodeRational : Decoder Rational
 encodeRational : Rational -> Value
 ```
 
+and also generates the implementation in Scala of the following API:
+
+```scala
+package apbufgen
+
+object APBufGen {
+  sealed trait Geometry
+  case class Circle(arg: CircleInfo[Int, Rational]) extends Geometry
+  case class Rectangle(arg: RectangleInfo[Int]) extends Geometry
+  def geometryReads(): Reads[Geometry]
+  def geometryWrites(): Writes[Geometry]
+
+  case class CircleInfo[Cnum, Rnum](center: Position[Cnum], radius: Rnum)
+  def circleInfoReads[Cnum, Rnum](Reads[Cnum], Reads[Rnum]): Reads[CircleInfo[Cnum, Rnum]]
+  def circleInfoWrites[Cnum, Rnum](Writes[Cnum], Writes[Rnum]): Writes[CircleInfo[Cnum, Rnum]]
+
+  case class Position[Num](x: Num, y: Num)
+  def positionReads[Num](Reads[Num]): Reads[Position[num]]
+  def positionWrites[Num](Writes[Num]): Writes[Position[num]]
+
+  case class Rational(denominator: Int, numerator: Int)
+  def rationalReads(): Reads[Rational]
+  def rationalWrites(): Writes[Rational]
+
+  case class RectangleInfo[Num](lowerRight: Position[Num], upperLeft: Position[Num])
+  def rectangleInfoReads[Num](Reads[Num]): Reads[RectangleInfo[Num]]
+  def rectangleInfoWrites[Num](Writes[Num]): Writes[RectangleInfo[Num]]
+}
+```
+
 
 ## Syntax of configuration files
 
