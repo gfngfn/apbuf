@@ -46,6 +46,7 @@ module Key : sig
   val from_snake_case : string -> t option
   val to_snake_case : t -> string
   val to_lower_camel_case : t -> string
+  val to_upper_camel_case : t -> string
 end = struct
   include NameScheme
 end

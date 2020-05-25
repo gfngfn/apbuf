@@ -20,7 +20,7 @@ end = struct
 
 
   let local_for_parameter x =
-    "local_param_" ^ (Variable.to_snake_case x)
+    "localParam" ^ (Variable.to_upper_camel_case x)
 
 
   let builtin_type_candidates =

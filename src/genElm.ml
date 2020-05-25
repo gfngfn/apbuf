@@ -13,19 +13,19 @@ module Constant : sig
 end = struct
 
   let global_decoder name =
-    "decode" ^ Name.to_upper_camel_case name
+    "decode" ^ (Name.to_upper_camel_case name)
 
 
   let global_encoder name =
-    "encode" ^ Name.to_upper_camel_case name
+    "encode" ^ (Name.to_upper_camel_case name)
 
 
   let local_for_key key =
-    "local_key_" ^ (Key.to_snake_case key)
+    "localKey" ^ (Key.to_upper_camel_case key)
 
 
   let local_for_parameter x =
-    "local_param_" ^ (Variable.to_snake_case x)
+    "localParam" ^ (Variable.to_upper_camel_case x)
 
 
   let builtin_type_candidates =
@@ -50,7 +50,7 @@ end = struct
 
 
   let type_parameter x =
-    "typaram_" ^ (Variable.to_snake_case x)
+    "ty" ^ (Variable.to_upper_camel_case x)
 
 
   let label_field = "_label"
