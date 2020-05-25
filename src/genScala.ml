@@ -5,6 +5,7 @@ module Constant : sig
   val global_reads_name : Name.t -> string
   val global_writes_name : Name.t -> string
   val local_for_parameter : Variable.t -> string
+  val key : Key.t -> string
   val type_identifier : Name.t -> string
   val type_parameter : Variable.t -> string
   val label_field : string
@@ -21,6 +22,39 @@ end = struct
 
   let local_for_parameter x =
     "localParam" ^ (Variable.to_upper_camel_case x)
+
+
+  module ReservedWordSet = Set.Make(String)
+
+
+  let reserved_words =
+    ReservedWordSet.of_list [
+      "abstract";
+      "case"; "catch"; "class";
+      "def"; "do";
+      "else"; "extends";
+      "false"; "final"; "finally"; "for"; "forSome";
+      "if"; "implicit"; "import";
+      "lazy";
+      "match";
+      "new"; "null";
+      "object"; "override";
+      "package"; "private"; "protected";
+      "return";
+      "sealed"; "super";
+      "this"; "throw"; "trait"; "true"; "try"; "type";
+      "val"; "var";
+      "while"; "with";
+      "yield";
+    ]
+
+
+  let key key =
+    let s = Key.to_lower_camel_case key in
+    if reserved_words |> ReservedWordSet.mem s then
+      s ^ "_"
+    else
+      s
 
 
   let builtin_type_candidates =
@@ -299,7 +333,7 @@ end = struct
         in
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Key.to_lower_camel_case key in
+            let skey = Constant.key key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
@@ -315,7 +349,7 @@ end = struct
       } ->
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Key.to_lower_camel_case key in
+            let skey = Constant.key key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty sdec in
@@ -426,7 +460,7 @@ end = struct
         let paramseq = make_parameter_string otyparams in
         let sfields =
           RecordMap.fold (fun key oty acc ->
-            let skey = Key.to_lower_camel_case key in
+            let skey = Constant.key key in
             let sty = stringify_type oty in
             let s = Printf.sprintf "%s: %s" skey sty in
             Alist.extend acc s
