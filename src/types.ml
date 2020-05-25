@@ -1,4 +1,32 @@
 
+module Name : sig
+  type t
+  val pp : Format.formatter -> t -> unit
+  val compare : t -> t -> int
+  val from_snake_case : string -> t option
+  val to_snake_case : t -> string
+  val to_lower_camel_case : t -> string
+  val to_upper_camel_case : t -> string
+  val bool   : t
+  val int    : t
+  val string : t
+  val list   : t
+  val option : t
+end  = struct
+  include NameScheme
+
+  let make_exn s =
+    match from_snake_case s with
+    | Some(name) -> name
+    | None       -> assert false
+
+  let int    = make_exn "int"
+  let bool   = make_exn "bool"
+  let string = make_exn "string"
+  let list   = make_exn "list"
+  let option = make_exn "option"
+end
+
 module Key : sig
   type t
   val pp : Format.formatter -> t -> unit
@@ -7,7 +35,7 @@ module Key : sig
   val to_snake_case : t -> string
   val to_lower_camel_case : t -> string
 end = struct
-  include Name
+  include NameScheme
 end
 
 module Constructor : sig
@@ -16,12 +44,11 @@ module Constructor : sig
   val compare : t -> t -> int
   val from_upper_camel_case : string -> t option
   val to_snake_case : t -> string
-  val to_lower_camel_case : t -> string
   val to_upper_camel_case : t -> string
   val none : t
   val some : t
 end = struct
-  include Name
+  include NameScheme
 
   let none =
     match from_upper_camel_case "None" with

@@ -286,15 +286,26 @@ end = struct
     | TypeIdentifier of string
 
 
+  let builtin_type_candidates =
+    let ( ==> ) x y = (x, y) in
+    [
+      Name.bool   ==> "Bool";
+      Name.int    ==> "Int";
+      Name.string ==> "String";
+      Name.list   ==> "List";
+      Name.option ==> "Maybe";
+    ]
+
+
   let type_identifier name =
     let s =
-      match Name.original name with
-      | "bool"   -> "Bool"
-      | "int"    -> "Int"
-      | "string" -> "String"
-      | "list"   -> "List"
-      | "option" -> "Maybe"
-      | _        -> Name.to_upper_camel_case name
+      match
+        builtin_type_candidates |> List.find_map (fun (namex, s) ->
+          if Name.compare namex name = 0 then Some(s) else None
+        )
+      with
+      | Some(s) -> s
+      | None    -> Name.to_upper_camel_case name
     in
     TypeIdentifier(s)
 

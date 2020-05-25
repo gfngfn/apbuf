@@ -97,11 +97,6 @@ let from_upper_camel_case (original : string) : t option =
   | Invalid_argument(_) -> None
 
 
-let make_exn (original : string) : t =
-  let fragments = String.split_on_char '_' original in
-  if is_valid fragments then { fragments; original; } else raise (Invalid_argument("Name.make_exn"))
-
-
 let original (name : t) : string =
   name.original
 
@@ -146,10 +141,3 @@ let pp ppf name =
 
 let compare name1 name2 =
   String.compare name1.original name2.original
-
-
-let int    = make_exn "int"
-let bool   = make_exn "bool"
-let string = make_exn "string"
-let list   = make_exn "list"
-let option = make_exn "option"
