@@ -32,14 +32,15 @@ end = struct
       Name.option ==> "Maybe";
     ]
 
-    let type_identifier name =
-      match
-        builtin_type_candidates |> List.find_map (fun (namex, s) ->
-          if Name.compare namex name = 0 then Some(s) else None
-        )
-      with
-      | Some(s) -> s
-      | None    -> Name.to_upper_camel_case name
+
+  let type_identifier name =
+    match
+      builtin_type_candidates |> List.find_map (fun (namex, s) ->
+        if Name.compare namex name = 0 then Some(s) else None
+      )
+    with
+    | Some(s) -> s
+    | None    -> Name.to_upper_camel_case name
 
 
   let label_field = "_label"
@@ -99,20 +100,10 @@ end = struct
     | Var of string
 
 
-  let global_decoder name =
-    Var(Constant.global_decoder name)
-
-
-  let global_encoder name =
-    Var(Constant.global_encoder name)
-
-
-  let local_for_key key =
-    Var(Constant.local_for_key key)
-
-
-  let local_for_parameter x =
-    Var("local_param_" ^ x)
+  let global_decoder name   = Var(Constant.global_decoder name)
+  let global_encoder name   = Var(Constant.global_encoder name)
+  let local_for_key key     = Var(Constant.local_for_key key)
+  let local_for_parameter x = Var("local_param_" ^ x)
 
 
   type pattern =

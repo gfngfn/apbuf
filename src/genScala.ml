@@ -78,16 +78,9 @@ end = struct
     | Var of string
 
 
-  let global_reads name =
-    Var(Constant.global_reads_name name)
-
-
-  let global_writes name =
-    Var(Constant.global_writes_name name)
-
-
-  let local_for_parameter x =
-    Var("local_param_" ^ x)
+  let global_reads name     = Var(Constant.global_reads_name name)
+  let global_writes name    = Var(Constant.global_writes_name name)
+  let local_for_parameter x = Var("local_param_" ^ x)
 
 
   type type_identifier =
