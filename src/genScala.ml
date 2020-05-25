@@ -4,7 +4,9 @@ open Types
 module Constant : sig
   val global_reads_name : Name.t -> string
   val global_writes_name : Name.t -> string
+  val local_for_parameter : Variable.t -> string
   val type_identifier : Name.t -> string
+  val type_parameter : Variable.t -> string
   val label_field : string
   val arg_field : string
 end = struct
@@ -15,6 +17,10 @@ end = struct
 
   let global_writes_name name =
     Name.to_lower_camel_case name ^ "Writes"
+
+
+  let local_for_parameter x =
+    "local_param_" ^ (Variable.to_snake_case x)
 
 
   let builtin_type_candidates =
@@ -38,6 +44,10 @@ end = struct
     | None    -> Name.to_upper_camel_case name
 
 
+  let type_parameter x =
+    Variable.to_upper_camel_case x
+
+
   let label_field = "_label"
   let arg_field   = "_arg"
 
@@ -46,13 +56,13 @@ end
 
 module Output : sig
   type identifier
-  val local_for_parameter : Types.variable -> identifier
+  val local_for_parameter : Variable.t -> identifier
   val global_reads : Name.t -> identifier
   val global_writes : Name.t -> identifier
   type type_identifier
   val type_identifier : Name.t -> type_identifier
   type type_parameter
-  val type_parameter : Types.variable -> type_parameter
+  val type_parameter : Variable.t -> type_parameter
   type typ
   val type_variable : type_parameter -> typ
   val type_name : type_identifier -> typ list -> typ
@@ -80,7 +90,7 @@ end = struct
 
   let global_reads name     = Var(Constant.global_reads_name name)
   let global_writes name    = Var(Constant.global_writes_name name)
-  let local_for_parameter x = Var("local_param_" ^ x)
+  let local_for_parameter x = Var(Constant.local_for_parameter x)
 
 
   type type_identifier =
@@ -95,8 +105,8 @@ end = struct
     | TypeParameter of string
 
 
-  let type_parameter (x : Types.variable) =
-    TypeParameter(x)
+  let type_parameter (x : Variable.t) =
+    TypeParameter(Constant.type_parameter x)
 
 
   type typ =
