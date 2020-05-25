@@ -163,7 +163,7 @@ end = struct
     | Record of tree RecordMap.t
     | FieldAccess of {
         record : tree;
-        key    : string;
+        key    : Key.t;
       }
     | Case of {
         subject  : tree;
@@ -202,10 +202,9 @@ end = struct
 
 
   let record_field_access otree key =
-    let skey = Constant.key key in
     FieldAccess{
       record = otree;
-      key    = skey;
+      key    = key;
     }
 
 
@@ -217,7 +216,7 @@ end = struct
 
 
   let decode_field_access (key : Key.t) (otree : tree) : tree =
-    decode_field_access_raw (Constant.key key) otree
+    decode_field_access_raw (CommonConstant.key_for_json key) otree
 
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
@@ -502,7 +501,8 @@ end = struct
         in
         Format.sprintf "{ %s }" (String.concat ", " ss)
 
-    | FieldAccess{ record = otree_record; key = skey; } ->
+    | FieldAccess{ record = otree_record; key = key; } ->
+        let skey = Constant.key key in
         let s = stringify_tree indent otree_record in
         Format.sprintf "%s.%s" s skey
 
@@ -817,7 +817,7 @@ and encoder_of_record (rcd : message RecordMap.t) : Output.tree =
       let otree_encoded =
         Output.general_application otree_encoder (Output.record_field_access (Output.identifier(x_record)) key)
       in
-      let otree_pair = Output.tuple [ Output.string_literal (Constant.key key); otree_encoded ] in
+      let otree_pair = Output.tuple [ Output.string_literal (CommonConstant.key_for_json key); otree_encoded ] in
       Alist.extend acc otree_pair
     ) rcd Alist.empty |> Alist.to_list
   in
