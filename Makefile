@@ -5,4 +5,5 @@ all: src/*
 	cp ./_build/default/src/main.exe ./apbuf
 
 .PHONY: clean
+clean:
 	dune clean
