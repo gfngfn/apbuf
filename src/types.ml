@@ -18,8 +18,18 @@ module Constructor : sig
   val to_snake_case : t -> string
   val to_lower_camel_case : t -> string
   val to_upper_camel_case : t -> string
+  val none : t
+  val some : t
 end = struct
   include Name
+
+  let none =
+    match from_upper_camel_case "None" with
+    | Some(c) -> c | None -> assert false
+
+  let some =
+    match from_upper_camel_case "Some" with
+    | Some(c) -> c | None -> assert false
 end
 
 type 'a ranged = Range.t * 'a
@@ -28,7 +38,7 @@ type 'a ranged = Range.t * 'a
 type variable = string
 [@@deriving show { with_path = false; }]
 
-type constructor = string
+type constructor = Constructor.t
 [@@deriving show { with_path = false; }]
 
 type parsed_message =
@@ -36,7 +46,7 @@ type parsed_message =
   | PName    of string ranged * parsed_message list
 [@@deriving show { with_path = false; }]
 
-type parsed_variant = (constructor ranged * parsed_message option) list
+type parsed_variant = (string ranged * parsed_message option) list
 [@@deriving show { with_path = false; }]
 
 type parsed_record = (string ranged * parsed_message) list
@@ -76,14 +86,14 @@ let pp_record_map pp ppf rcdmap =
   );
   Format.fprintf ppf "@]}"
 
-module VariantMap = Map.Make(String)
+module VariantMap = Map.Make(Constructor)
 
 let pp_variant_map pp ppf variant =
   Format.fprintf ppf "@[<hov2>*V(@ ";
-  variant |> VariantMap.iter (fun k vopt ->
+  variant |> VariantMap.iter (fun ctor vopt ->
     match vopt with
-    | None    -> Format.fprintf ppf "%s,@ " k
-    | Some(v) -> Format.fprintf ppf "%s@ ->@ @[%a@],@ " k pp v
+    | None    -> Format.fprintf ppf "%a,@ " Constructor.pp ctor
+    | Some(v) -> Format.fprintf ppf "%a@ ->@ @[%a@],@ " Constructor.pp ctor pp v
   );
   Format.fprintf ppf "@])"
 
@@ -119,10 +129,11 @@ type error =
   | ParseErrorDetected             of { range : Range.t; }
   | MalformedName                  of { raw : string; range : Range.t; }
   | MalformedKey                   of { raw : string; range : Range.t; }
+  | MalformedConstructor           of { raw : string; range : Range.t; }
   | UnsupportedTarget              of { target : string; }
   | MessageNameDefinedMoreThanOnce of { name : Name.t; range : Range.t; }
   | FieldDefinedMoreThanOnce       of { key : Key.t; range : Range.t; }
-  | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
+  | ConstructorDefinedMoreThanOnce of { constructor : constructor; range : Range.t; }
   | UndefinedMessageName           of { name : Name.t; }
   | UndefinedVariable              of { variable : variable; range : Range.t; }
   | VariableBoundMoreThanOnce      of { variable : variable; }
@@ -188,6 +199,14 @@ let make_key ((rng, lower) : string ranged) : (Key.t ranged, error) result =
   | Some(key) -> return (rng, key)
 
 
+let make_constructor ((rng, sctor) : string ranged) : (Constructor.t ranged, error) result =
+  let open ResultMonad in
+  match Constructor.from_upper_camel_case sctor with
+  | None       -> error (MalformedConstructor{ raw = sctor; range = rng; })
+  | Some(ctor) -> return (rng, ctor)
+
+
+
 let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   let open ResultMonad in
   match pmsg with
@@ -206,10 +225,11 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
 
 let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
   let open ResultMonad in
-  pvariant |> List.fold_left (fun res ((_, ctor), pmsgsubopt) ->
+  pvariant |> List.fold_left (fun res (rupper, pmsgsubopt) ->
     res >>= fun variantmap ->
+    make_constructor rupper >>= fun (rng, ctor) ->
     if variantmap |> VariantMap.mem ctor then
-      error (ConstructorDefinedMoreThanOnce{ constructor = ctor; })
+      error (ConstructorDefinedMoreThanOnce{ constructor = ctor; range = rng; })
     else
       begin
         match pmsgsubopt with

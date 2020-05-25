@@ -76,7 +76,7 @@ end = struct
 
   type pattern =
     | StringPattern      of string
-    | ConstructorPattern of constructor * pattern option
+    | ConstructorPattern of string * pattern option
     | IdentifierPattern  of identifier
 
 
@@ -128,7 +128,7 @@ end = struct
 
 
   let constructor ctor =
-    Constructor(ctor)
+    Constructor(Constructor.to_upper_camel_case ctor)
 
 
   let record orcd =
@@ -198,7 +198,7 @@ end = struct
       let branches =
         let acc =
           VariantMap.fold (fun ctor branch acc ->
-            Alist.extend acc (StringPattern(ctor), branch)
+            Alist.extend acc (StringPattern(Constructor.to_upper_camel_case ctor), branch)
           ) omap Alist.empty
         in
         let ovar_other = Var("other") in
@@ -260,8 +260,9 @@ end = struct
           | Some(enc) ->
               (Some(general_application enc (identifier ovar_toencsub)), Some(IdentifierPattern(ovar_toencsub)))
         in
-        let pat = ConstructorPattern(ctor, paramopt) in
-        Alist.extend acc (pat, encode_variant ctor otreeopt)
+        let sctor = Constructor.to_upper_camel_case ctor in
+        let pat = ConstructorPattern(sctor, paramopt) in
+        Alist.extend acc (pat, encode_variant sctor otreeopt)
       ) variant Alist.empty |> Alist.to_list
     in
     Abstract{
@@ -390,11 +391,11 @@ end = struct
     | StringPattern(s) ->
         Format.sprintf "\"%s\"" s
 
-    | ConstructorPattern(ctor, patopt) ->
+    | ConstructorPattern(sctor, patopt) ->
         begin
           match patopt with
-          | None         -> ctor
-          | Some(patsub) -> Format.sprintf "(%s %s)" ctor (stringify_pattern patsub)
+          | None         -> sctor
+          | Some(patsub) -> Format.sprintf "(%s %s)" sctor (stringify_pattern patsub)
         end
 
     | IdentifierPattern(Var(s)) ->
@@ -526,7 +527,7 @@ end = struct
               | Some(ty) -> " "  ^ (stringify_type ty)
             in
             let sep = if index == 0 then "=" else "|" in
-            Format.sprintf "  %s %s%s" sep ctor sarg
+            Format.sprintf "  %s %s%s" sep (Constructor.to_upper_camel_case ctor) sarg
           )
         in
         Format.sprintf "type %s%s\n%s"
@@ -576,8 +577,8 @@ end = struct
         let ovar = local_for_parameter s in
         let omap =
           VariantMap.empty
-            |> VariantMap.add "None" (succeed (constructor "Nothing"))
-            |> VariantMap.add "Some" (access_argument (map (constructor "Just") (Identifier(ovar))))
+            |> VariantMap.add Constructor.none (succeed (Constructor("Nothing")))
+            |> VariantMap.add Constructor.some (access_argument (map (Constructor("Just")) (Identifier(ovar))))
         in
         let typaram = type_parameter s in
         DefVal{

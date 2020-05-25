@@ -287,15 +287,16 @@ end = struct
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
           VariantMap.fold (fun ctor otreeopt acc ->
+            let sctor = Constructor.to_upper_camel_case ctor in
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" ctor ctor
+                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" sctor sctor
 
               | Some(oty, otree_decoder) ->
                   let sty = stringify_type oty in
                   let sdec = stringify_tree otree_decoder in
-                  Printf.sprintf "case \"%s\" => (JsPath \\ \"arg\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" ctor sty sdec ctor
+                  Printf.sprintf "case \"%s\" => (JsPath \\ \"arg\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" sctor sty sdec sctor
             in
             Alist.extend acc s
 
@@ -315,20 +316,21 @@ end = struct
         in
         let scases =
           VariantMap.fold (fun ctor otreeopt acc ->
+            let sctor = Constructor.to_upper_camel_case ctor in
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case %s() => Json.obj(\"label\" -> JsString(\"%s\"))" ctor ctor
+                  Printf.sprintf "case %s() => Json.obj(\"label\" -> JsString(\"%s\"))" sctor sctor
 
               | Some(_oty, otree_encoder) ->
                   let senc = stringify_tree otree_encoder in
                   let slabel =
-                    Printf.sprintf "\"label\" -> JsString(\"%s\")" ctor
+                    Printf.sprintf "\"label\" -> JsString(\"%s\")" sctor
                   in
                   let sarg =
                     Printf.sprintf "\"arg\" -> Json.toJson(arg)(%s)" senc
                   in
-                  Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" ctor slabel sarg
+                  Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" sctor slabel sarg
             in
             Alist.extend acc s
 
@@ -354,15 +356,16 @@ end = struct
         let paramseq = make_parameter_string otyparams in
         let smain = Printf.sprintf "%s%s" tynm paramseq in
         let sctors =
-          VariantMap.fold (fun ctornm otyopt acc ->
+          VariantMap.fold (fun ctor otyopt acc ->
+            let sctor = Constructor.to_upper_camel_case ctor in
             let s =
               match otyopt with
               | None ->
-                  Printf.sprintf "  case class %s%s() extends %s\n" ctornm paramseq smain
+                  Printf.sprintf "  case class %s%s() extends %s\n" sctor paramseq smain
 
               | Some(oty) ->
                   let sty = stringify_type oty in
-                  Printf.sprintf "  case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
+                  Printf.sprintf "  case class %s%s(arg: %s) extends %s\n" sctor paramseq sty smain
             in
             Alist.extend acc s
           ) ctors Alist.empty |> Alist.to_list

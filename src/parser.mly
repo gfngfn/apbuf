@@ -11,6 +11,7 @@
 %token<Range.t * string> STRING
 
 %start toplevel
+%type<((Range.t * string) * Types.parsed_message option) list> variant
 %type<Types.top_level> toplevel
 %type<(Range.t * Types.variable) list> params
 %type<Types.parsed_message list> argssub
