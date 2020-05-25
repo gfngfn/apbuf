@@ -3,9 +3,21 @@ module Key : sig
   type t
   val pp : Format.formatter -> t -> unit
   val compare : t -> t -> int
-  val make : string -> t option
-  val snake_case : t -> string
-  val lower_camel_case : t -> string
+  val from_snake_case : string -> t option
+  val to_snake_case : t -> string
+  val to_lower_camel_case : t -> string
+end = struct
+  include Name
+end
+
+module Constructor : sig
+  type t
+  val pp : Format.formatter -> t -> unit
+  val compare : t -> t -> int
+  val from_upper_camel_case : string -> t option
+  val to_snake_case : t -> string
+  val to_lower_camel_case : t -> string
+  val to_upper_camel_case : t -> string
 end = struct
   include Name
 end
@@ -164,14 +176,14 @@ end
 
 let make_name ((rng, lower) : string ranged) : (Name.t ranged, error) result =
   let open ResultMonad in
-  match Name.make lower with
+  match Name.from_snake_case lower with
   | None       -> error (MalformedName{ raw = lower; range = rng; })
   | Some(name) -> return (rng, name)
 
 
 let make_key ((rng, lower) : string ranged) : (Key.t ranged, error) result =
   let open ResultMonad in
-  match Key.make lower with
+  match Key.from_snake_case lower with
   | None      -> error (MalformedKey{ raw = lower; range = rng; })
   | Some(key) -> return (rng, key)
 

@@ -58,15 +58,15 @@ end = struct
 
 
   let global_decoder name =
-    Var("decode" ^ Name.upper_camel_case name)
+    Var("decode" ^ Name.to_upper_camel_case name)
 
 
   let global_encoder name =
-    Var("encode" ^ Name.upper_camel_case name)
+    Var("encode" ^ Name.to_upper_camel_case name)
 
 
   let local_for_key key =
-    let s = Key.snake_case key in
+    let s = Key.to_snake_case key in
     Var("local_key_" ^ s)
 
 
@@ -136,7 +136,7 @@ end = struct
 
 
   let record_field_access otree key =
-    let skey = Key.lower_camel_case key in
+    let skey = Key.to_lower_camel_case key in
     FieldAccess{
       record = otree;
       key    = skey;
@@ -151,7 +151,7 @@ end = struct
 
 
   let decode_field_access (key : Key.t) (otree : tree) : tree =
-    decode_field_access_raw (Key.lower_camel_case key) otree
+    decode_field_access_raw (Key.to_lower_camel_case key) otree
 
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
@@ -293,7 +293,7 @@ end = struct
       | "string" -> "String"
       | "list"   -> "List"
       | "option" -> "Maybe"
-      | _        -> Name.upper_camel_case name
+      | _        -> Name.to_upper_camel_case name
     in
     TypeIdentifier(s)
 
@@ -438,7 +438,7 @@ end = struct
     | Record(orcd) ->
         let ss =
           RecordMap.fold (fun key otree acc ->
-            let s = Format.sprintf "%s = %s" (Key.lower_camel_case key) (stringify_tree (indent + 1) otree) in
+            let s = Format.sprintf "%s = %s" (Key.to_lower_camel_case key) (stringify_tree (indent + 1) otree) in
             Alist.extend acc s
           ) orcd Alist.empty |> Alist.to_list
         in
@@ -482,7 +482,7 @@ end = struct
     | RecordType(tyrcd) ->
         let sr =
           tyrcd |> List.map (fun (key, ty) ->
-            Format.sprintf "%s : %s" (Key.lower_camel_case key) (stringify_type ty)
+            Format.sprintf "%s : %s" (Key.to_lower_camel_case key) (stringify_type ty)
           ) |> String.concat ", "
         in
         Format.sprintf "{ %s }" sr
@@ -754,7 +754,7 @@ and encoder_of_record (rcd : message RecordMap.t) : Output.tree =
       let otree_encoded =
         Output.general_application otree_encoder (Output.record_field_access (Output.identifier(x_record)) key)
       in
-      let otree_pair = Output.tuple [ Output.string_literal (Key.lower_camel_case key); otree_encoded ] in
+      let otree_pair = Output.tuple [ Output.string_literal (Key.to_lower_camel_case key); otree_encoded ] in
       Alist.extend acc otree_pair
     ) rcd Alist.empty |> Alist.to_list
   in

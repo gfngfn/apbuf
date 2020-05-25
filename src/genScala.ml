@@ -37,11 +37,11 @@ end = struct
 
 
   let global_reads name =
-    Var(Name.lower_camel_case name ^ "Reads")
+    Var(Name.to_lower_camel_case name ^ "Reads")
 
 
   let global_writes name =
-    Var(Name.lower_camel_case name ^ "Writes")
+    Var(Name.to_lower_camel_case name ^ "Writes")
 
 
   let local_for_parameter x =
@@ -53,7 +53,7 @@ end = struct
 
 
   let type_identifier (name : Name.t) =
-    TypeIdentifier(Name.upper_camel_case name)
+    TypeIdentifier(Name.to_upper_camel_case name)
 
 
   type type_parameter =
@@ -254,7 +254,7 @@ end = struct
         in
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Key.lower_camel_case key in
+            let skey = Key.to_lower_camel_case key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
@@ -270,7 +270,7 @@ end = struct
       } ->
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Key.lower_camel_case key in
+            let skey = Key.to_lower_camel_case key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty sdec in
@@ -378,7 +378,7 @@ end = struct
         let paramseq = make_parameter_string otyparams in
         let sfields =
           RecordMap.fold (fun key oty acc ->
-            let skey = Key.lower_camel_case key in
+            let skey = Key.to_lower_camel_case key in
             let sty = stringify_type oty in
             let s = Printf.sprintf "%s: %s" skey sty in
             Alist.extend acc s
