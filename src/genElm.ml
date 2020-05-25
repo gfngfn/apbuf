@@ -6,6 +6,7 @@ module Constant : sig
   val global_encoder : Name.t -> string
   val local_for_key : Key.t -> string
   val local_for_parameter : Variable.t -> string
+  val key : Key.t -> string
   val type_identifier : Name.t -> string
   val type_parameter : Variable.t -> string
   val label_field : string
@@ -26,6 +27,30 @@ end = struct
 
   let local_for_parameter x =
     "localParam" ^ (Variable.to_upper_camel_case x)
+
+
+  module ReservedWordSet = Set.Make(String)
+
+
+  let reserved_words =
+    ReservedWordSet.of_list [
+      "type"; "alias"; "port";
+      "if"; "then"; "else";
+      "case"; "of";
+      "let"; "in";
+      "infix"; "left"; "right"; "non";
+      "module"; "import"; "exposing"; "as";
+      "effect"; "where"; "command"; "subscription";
+    ]
+      (* https://github.com/elm/compiler/blob/14af98cde81146abd5950be3d7ab0133e55898ef/compiler/src/Parse/Keyword.hs *)
+
+
+  let key key =
+    let s = Key.to_lower_camel_case key in
+    if reserved_words |> ReservedWordSet.mem s then
+      s ^ "_"
+    else
+      s
 
 
   let builtin_type_candidates =
@@ -178,7 +203,7 @@ end = struct
 
 
   let record_field_access otree key =
-    let skey = Key.to_lower_camel_case key in
+    let skey = Constant.key key in
     FieldAccess{
       record = otree;
       key    = skey;
@@ -193,7 +218,7 @@ end = struct
 
 
   let decode_field_access (key : Key.t) (otree : tree) : tree =
-    decode_field_access_raw (Key.to_lower_camel_case key) otree
+    decode_field_access_raw (Constant.key key) otree
 
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
@@ -472,7 +497,7 @@ end = struct
     | Record(orcd) ->
         let ss =
           RecordMap.fold (fun key otree acc ->
-            let s = Format.sprintf "%s = %s" (Key.to_lower_camel_case key) (stringify_tree (indent + 1) otree) in
+            let s = Format.sprintf "%s = %s" (Constant.key key) (stringify_tree (indent + 1) otree) in
             Alist.extend acc s
           ) orcd Alist.empty |> Alist.to_list
         in
@@ -516,7 +541,7 @@ end = struct
     | RecordType(tyrcd) ->
         let sr =
           tyrcd |> List.map (fun (key, ty) ->
-            Format.sprintf "%s : %s" (Key.to_lower_camel_case key) (stringify_type ty)
+            Format.sprintf "%s : %s" (Constant.key key) (stringify_type ty)
           ) |> String.concat ", "
         in
         Format.sprintf "{ %s }" sr
@@ -793,7 +818,7 @@ and encoder_of_record (rcd : message RecordMap.t) : Output.tree =
       let otree_encoded =
         Output.general_application otree_encoder (Output.record_field_access (Output.identifier(x_record)) key)
       in
-      let otree_pair = Output.tuple [ Output.string_literal (Key.to_lower_camel_case key); otree_encoded ] in
+      let otree_pair = Output.tuple [ Output.string_literal (Constant.key key); otree_encoded ] in
       Alist.extend acc otree_pair
     ) rcd Alist.empty |> Alist.to_list
   in
