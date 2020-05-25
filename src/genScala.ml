@@ -1,16 +1,96 @@
 
 open Types
 
+module Constant : sig
+  val global_reads_name : Name.t -> string
+  val global_writes_name : Name.t -> string
+  val local_for_parameter : Variable.t -> string
+  val key : Key.t -> string
+  val type_identifier : Name.t -> string
+  val type_parameter : Variable.t -> string
+end = struct
+
+  let global_reads_name name =
+    Name.to_lower_camel_case name ^ "Reads"
+
+
+  let global_writes_name name =
+    Name.to_lower_camel_case name ^ "Writes"
+
+
+  let local_for_parameter x =
+    "localParam" ^ (Variable.to_upper_camel_case x)
+
+
+  module ReservedWordSet = Set.Make(String)
+
+
+  let reserved_words =
+    ReservedWordSet.of_list [
+      "abstract";
+      "case"; "catch"; "class";
+      "def"; "do";
+      "else"; "extends";
+      "false"; "final"; "finally"; "for"; "forSome";
+      "if"; "implicit"; "import";
+      "lazy";
+      "match";
+      "new"; "null";
+      "object"; "override";
+      "package"; "private"; "protected";
+      "return";
+      "sealed"; "super";
+      "this"; "throw"; "trait"; "true"; "try"; "type";
+      "val"; "var";
+      "while"; "with";
+      "yield";
+    ]
+
+
+  let key key =
+    let s = Key.to_lower_camel_case key in
+    if reserved_words |> ReservedWordSet.mem s then
+      s ^ "_"
+    else
+      s
+
+
+  let builtin_type_candidates =
+    let ( ==> ) x y = (x, y) in
+    [
+      Name.bool   ==> "Boolean";
+      Name.int    ==> "Int";
+      Name.string ==> "String";
+      Name.list   ==> "List";
+      Name.option ==> "Option";
+    ]
+
+
+  let type_identifier name =
+    match
+      builtin_type_candidates |> List.find_map (fun (namex, s) ->
+        if Name.compare namex name = 0 then Some(s) else None
+      )
+    with
+    | Some(s) -> s
+    | None    -> Name.to_upper_camel_case name
+
+
+  let type_parameter x =
+    Variable.to_upper_camel_case x
+
+end
+
 
 module Output : sig
   type identifier
-  val local_for_parameter : Types.variable -> identifier
+  val local_for_parameter : Variable.t -> identifier
   val global_reads : Name.t -> identifier
   val global_writes : Name.t -> identifier
   type type_identifier
   val type_identifier : Name.t -> type_identifier
   type type_parameter
-  val type_parameter : Types.variable -> type_parameter
+  val type_parameter : Variable.t -> type_parameter
   type typ
   val type_variable : type_parameter -> typ
   val type_name : type_identifier -> typ list -> typ
@@ -36,16 +116,9 @@ end = struct
     | Var of string
 
 
-  let global_reads name =
-    Var(Name.lower_camel_case name ^ "Reads")
-
-
-  let global_writes name =
-    Var(Name.lower_camel_case name ^ "Writes")
-
-
-  let local_for_parameter x =
-    Var("local_param_" ^ x)
+  let global_reads name     = Var(Constant.global_reads_name name)
+  let global_writes name    = Var(Constant.global_writes_name name)
+  let local_for_parameter x = Var(Constant.local_for_parameter x)
 
 
   type type_identifier =
@@ -53,15 +126,15 @@ end = struct
 
 
   let type_identifier (name : Name.t) =
-    TypeIdentifier(Name.upper_camel_case name)
+    TypeIdentifier(Constant.type_identifier name)
 
 
   type type_parameter =
     | TypeParameter of string
 
 
-  let type_parameter (x : Types.variable) =
-    TypeParameter(x)
+  let type_parameter (x : Variable.t) =
+    TypeParameter(Constant.type_parameter x)
 
 
   type typ =
@@ -254,7 +327,7 @@ end = struct
         in
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Key.lower_camel_case key in
+            let skey = Constant.key key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
@@ -270,7 +343,7 @@ end = struct
       } ->
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Key.lower_camel_case key in
+            let skey = Constant.key key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty sdec in
@@ -287,21 +360,22 @@ end = struct
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
           VariantMap.fold (fun ctor otreeopt acc ->
+            let sctor = Constructor.to_upper_camel_case ctor in
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" ctor ctor
+                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" sctor sctor
 
               | Some(oty, otree_decoder) ->
                   let sty = stringify_type oty in
                   let sdec = stringify_tree otree_decoder in
-                  Printf.sprintf "case \"%s\" => (JsPath \\ \"arg\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" ctor sty sdec ctor
+                  Printf.sprintf "case \"%s\" => (JsPath \\ \"%s\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" sctor CommonConstant.arg_field sty sdec sctor
             in
             Alist.extend acc s
 
           ) ctors Alist.empty |> Alist.to_list |> String.concat " "
         in
-        Printf.sprintf "(JsPath \\ \"label\").read[String].flatMap { (label: String) => label match { %s }}" scases
+        Printf.sprintf "(JsPath \\ \"%s\").read[String].flatMap { (label: String) => label match { %s }}" CommonConstant.label_field scases
 
     | VariantWrites{
         type_name    = TypeIdentifier(tynm);
@@ -315,20 +389,21 @@ end = struct
         in
         let scases =
           VariantMap.fold (fun ctor otreeopt acc ->
+            let sctor = Constructor.to_upper_camel_case ctor in
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case %s() => Json.obj(\"label\" -> JsString(\"%s\"))" ctor ctor
+                  Printf.sprintf "case %s() => Json.obj(\"%s\" -> JsString(\"%s\"))" sctor CommonConstant.label_field sctor
 
               | Some(_oty, otree_encoder) ->
                   let senc = stringify_tree otree_encoder in
                   let slabel =
-                    Printf.sprintf "\"label\" -> JsString(\"%s\")" ctor
+                    Printf.sprintf "\"%s\" -> JsString(\"%s\")" CommonConstant.label_field sctor
                   in
                   let sarg =
-                    Printf.sprintf "\"arg\" -> Json.toJson(arg)(%s)" senc
+                    Printf.sprintf "\"%s\" -> Json.toJson(arg)(%s)" CommonConstant.arg_field senc
                   in
-                  Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" ctor slabel sarg
+                  Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" sctor slabel sarg
             in
             Alist.extend acc s
 
@@ -354,15 +429,16 @@ end = struct
         let paramseq = make_parameter_string otyparams in
         let smain = Printf.sprintf "%s%s" tynm paramseq in
         let sctors =
-          VariantMap.fold (fun ctornm otyopt acc ->
+          VariantMap.fold (fun ctor otyopt acc ->
+            let sctor = Constructor.to_upper_camel_case ctor in
             let s =
               match otyopt with
               | None ->
-                  Printf.sprintf "  case class %s%s() extends %s\n" ctornm paramseq smain
+                  Printf.sprintf "  case class %s%s() extends %s\n" sctor paramseq smain
 
               | Some(oty) ->
                   let sty = stringify_type oty in
-                  Printf.sprintf "  case class %s%s(arg: %s) extends %s\n" ctornm paramseq sty smain
+                  Printf.sprintf "  case class %s%s(arg: %s) extends %s\n" sctor paramseq sty smain
             in
             Alist.extend acc s
           ) ctors Alist.empty |> Alist.to_list
@@ -378,7 +454,7 @@ end = struct
         let paramseq = make_parameter_string otyparams in
         let sfields =
           RecordMap.fold (fun key oty acc ->
-            let skey = Key.lower_camel_case key in
+            let skey = Constant.key key in
             let sty = stringify_type oty in
             let s = Printf.sprintf "%s: %s" skey sty in
             Alist.extend acc s

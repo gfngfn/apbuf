@@ -1,6 +1,82 @@
 
 open Types
 
+module Constant : sig
+  val global_decoder : Name.t -> string
+  val global_encoder : Name.t -> string
+  val local_for_key : Key.t -> string
+  val local_for_parameter : Variable.t -> string
+  val key : Key.t -> string
+  val type_identifier : Name.t -> string
+  val type_parameter : Variable.t -> string
+end = struct
+
+  let global_decoder name =
+    "decode" ^ (Name.to_upper_camel_case name)
+
+
+  let global_encoder name =
+    "encode" ^ (Name.to_upper_camel_case name)
+
+
+  let local_for_key key =
+    "localKey" ^ (Key.to_upper_camel_case key)
+
+
+  let local_for_parameter x =
+    "localParam" ^ (Variable.to_upper_camel_case x)
+
+
+  module ReservedWordSet = Set.Make(String)
+
+
+  let reserved_words =
+    ReservedWordSet.of_list [
+      "type"; "alias"; "port";
+      "if"; "then"; "else";
+      "case"; "of";
+      "let"; "in";
+      "infix"; "left"; "right"; "non";
+      "module"; "import"; "exposing"; "as";
+      "effect"; "where"; "command"; "subscription";
+    ]
+      (* https://github.com/elm/compiler/blob/14af98cde81146abd5950be3d7ab0133e55898ef/compiler/src/Parse/Keyword.hs *)
+
+
+  let key key =
+    let s = Key.to_lower_camel_case key in
+    if reserved_words |> ReservedWordSet.mem s then
+      s ^ "_"
+    else
+      s
+
+
+  let builtin_type_candidates =
+    let ( ==> ) x y = (x, y) in
+    [
+      Name.bool   ==> "Bool";
+      Name.int    ==> "Int";
+      Name.string ==> "String";
+      Name.list   ==> "List";
+      Name.option ==> "Maybe";
+    ]
+
+
+  let type_identifier name =
+    match
+      builtin_type_candidates |> List.find_map (fun (namex, s) ->
+        if Name.compare namex name = 0 then Some(s) else None
+      )
+    with
+    | Some(s) -> s
+    | None    -> Name.to_upper_camel_case name
+
+
+  let type_parameter x =
+    "ty" ^ (Variable.to_upper_camel_case x)
+
+end
+
 
 module Output : sig
 
@@ -8,7 +84,7 @@ module Output : sig
   val global_decoder : Name.t -> identifier
   val global_encoder : Name.t -> identifier
   val local_for_key : Key.t -> identifier
-  val local_for_parameter : Types.variable -> identifier
+  val local_for_parameter : Variable.t -> identifier
   type tree
   val identifier : identifier -> tree
   val application : identifier -> tree list -> tree
@@ -31,7 +107,7 @@ module Output : sig
   type type_identifier
   val type_identifier : Name.t -> type_identifier
   type type_parameter
-  val type_parameter : Types.variable -> type_parameter
+  val type_parameter : Variable.t -> type_parameter
   type typ
   val type_name : type_identifier -> typ list -> typ
   val type_variable : type_parameter -> typ
@@ -49,34 +125,19 @@ module Output : sig
 
 end = struct
 
-  let label_key    = "_label"
-  let argument_key = "_arg"
-
-
   type identifier =
     | Var of string
 
 
-  let global_decoder name =
-    Var("decode" ^ Name.upper_camel_case name)
-
-
-  let global_encoder name =
-    Var("encode" ^ Name.upper_camel_case name)
-
-
-  let local_for_key key =
-    let s = Key.snake_case key in
-    Var("local_key_" ^ s)
-
-
-  let local_for_parameter x =
-    Var("local_param_" ^ x)
+  let global_decoder name   = Var(Constant.global_decoder name)
+  let global_encoder name   = Var(Constant.global_encoder name)
+  let local_for_key key     = Var(Constant.local_for_key key)
+  let local_for_parameter x = Var(Constant.local_for_parameter x)
 
 
   type pattern =
     | StringPattern      of string
-    | ConstructorPattern of constructor * pattern option
+    | ConstructorPattern of string * pattern option
     | IdentifierPattern  of identifier
 
 
@@ -128,7 +189,7 @@ end = struct
 
 
   let constructor ctor =
-    Constructor(ctor)
+    Constructor(Constructor.to_upper_camel_case ctor)
 
 
   let record orcd =
@@ -136,7 +197,7 @@ end = struct
 
 
   let record_field_access otree key =
-    let skey = Key.lower_camel_case key in
+    let skey = Constant.key key in
     FieldAccess{
       record = otree;
       key    = skey;
@@ -151,7 +212,7 @@ end = struct
 
 
   let decode_field_access (key : Key.t) (otree : tree) : tree =
-    decode_field_access_raw (Key.lower_camel_case key) otree
+    decode_field_access_raw (Constant.key key) otree
 
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
@@ -185,20 +246,20 @@ end = struct
   let access_argument (otree : tree) =
     Application{
       applied = Identifier(Var("Json.Decode.field"));
-      arguments = [ StringLiteral(argument_key); otree; ]
+      arguments = [ StringLiteral(CommonConstant.arg_field); otree; ]
     }
 
 
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
-      decode_field_access_raw label_key (Identifier(Var("Json.Decode.string")))
+      decode_field_access_raw CommonConstant.label_field (Identifier(Var("Json.Decode.string")))
     in
     let otree_cont =
       let ovar_temp = Var("temp") in
       let branches =
         let acc =
           VariantMap.fold (fun ctor branch acc ->
-            Alist.extend acc (StringPattern(ctor), branch)
+            Alist.extend acc (StringPattern(Constructor.to_upper_camel_case ctor), branch)
           ) omap Alist.empty
         in
         let ovar_other = Var("other") in
@@ -238,11 +299,11 @@ end = struct
 
   let encode_variant (label : string) (argopt : tree option) : tree =
     let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
-    let otree_label_keyval = tuple [ string_literal label_key; otree_label ] in
+    let otree_label_keyval = tuple [ string_literal CommonConstant.label_field; otree_label ] in
     let entries =
       match argopt with
       | None      -> [ otree_label_keyval ]
-      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal argument_key; arg ] ]
+      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal CommonConstant.arg_field; arg ] ]
     in
     encode_record (list entries)
 
@@ -260,8 +321,9 @@ end = struct
           | Some(enc) ->
               (Some(general_application enc (identifier ovar_toencsub)), Some(IdentifierPattern(ovar_toencsub)))
         in
-        let pat = ConstructorPattern(ctor, paramopt) in
-        Alist.extend acc (pat, encode_variant ctor otreeopt)
+        let sctor = Constructor.to_upper_camel_case ctor in
+        let pat = ConstructorPattern(sctor, paramopt) in
+        Alist.extend acc (pat, encode_variant sctor otreeopt)
       ) variant Alist.empty |> Alist.to_list
     in
     Abstract{
@@ -286,16 +348,7 @@ end = struct
 
 
   let type_identifier name =
-    let s =
-      match Name.original name with
-      | "bool"   -> "Bool"
-      | "int"    -> "Int"
-      | "string" -> "String"
-      | "list"   -> "List"
-      | "option" -> "Maybe"
-      | _        -> Name.upper_camel_case name
-    in
-    TypeIdentifier(s)
+    TypeIdentifier(Constant.type_identifier name)
 
 
   type type_parameter =
@@ -303,7 +356,7 @@ end = struct
 
 
   let type_parameter x =
-    TypeParameter("typaram_" ^ x)
+    TypeParameter(Constant.type_parameter x)
 
 
   type typ =
@@ -390,11 +443,11 @@ end = struct
     | StringPattern(s) ->
         Format.sprintf "\"%s\"" s
 
-    | ConstructorPattern(ctor, patopt) ->
+    | ConstructorPattern(sctor, patopt) ->
         begin
           match patopt with
-          | None         -> ctor
-          | Some(patsub) -> Format.sprintf "(%s %s)" ctor (stringify_pattern patsub)
+          | None         -> sctor
+          | Some(patsub) -> Format.sprintf "(%s %s)" sctor (stringify_pattern patsub)
         end
 
     | IdentifierPattern(Var(s)) ->
@@ -438,7 +491,7 @@ end = struct
     | Record(orcd) ->
         let ss =
           RecordMap.fold (fun key otree acc ->
-            let s = Format.sprintf "%s = %s" (Key.lower_camel_case key) (stringify_tree (indent + 1) otree) in
+            let s = Format.sprintf "%s = %s" (Constant.key key) (stringify_tree (indent + 1) otree) in
             Alist.extend acc s
           ) orcd Alist.empty |> Alist.to_list
         in
@@ -482,7 +535,7 @@ end = struct
     | RecordType(tyrcd) ->
         let sr =
           tyrcd |> List.map (fun (key, ty) ->
-            Format.sprintf "%s : %s" (Key.lower_camel_case key) (stringify_type ty)
+            Format.sprintf "%s : %s" (Constant.key key) (stringify_type ty)
           ) |> String.concat ", "
         in
         Format.sprintf "{ %s }" sr
@@ -526,7 +579,7 @@ end = struct
               | Some(ty) -> " "  ^ (stringify_type ty)
             in
             let sep = if index == 0 then "=" else "|" in
-            Format.sprintf "  %s %s%s" sep ctor sarg
+            Format.sprintf "  %s %s%s" sep (Constructor.to_upper_camel_case ctor) sarg
           )
         in
         Format.sprintf "type %s%s\n%s"
@@ -563,8 +616,8 @@ end = struct
           body       = Identifier(Var("Json.Decode.string"));
         }
 
-    | BList(s) ->
-        let typaram = type_parameter s in
+    | BList(_) ->
+        let typaram = TypeParameter("a") in
         DefVal{
           val_name   = global_decoder Name.list;
           typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier Name.list, [!$ typaram])));
@@ -572,14 +625,14 @@ end = struct
           body       = Identifier(Var("Json.Decode.list"));
         }
 
-    | BOption(s) ->
-        let ovar = local_for_parameter s in
+    | BOption(_) ->
+        let ovar = Var("x") in
         let omap =
           VariantMap.empty
-            |> VariantMap.add "None" (succeed (constructor "Nothing"))
-            |> VariantMap.add "Some" (access_argument (map (constructor "Just") (Identifier(ovar))))
+            |> VariantMap.add Constructor.none (succeed (Constructor("Nothing")))
+            |> VariantMap.add Constructor.some (access_argument (map (Constructor("Just")) (Identifier(ovar))))
         in
-        let typaram = type_parameter s in
+        let typaram = TypeParameter("a") in
         DefVal{
           val_name   = global_decoder Name.option;
           typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier Name.option, [!$ typaram])));
@@ -616,8 +669,8 @@ end = struct
           body       = Identifier(Var("Json.Encode.string"));
         }
 
-    | BList(s) ->
-        let typaram = type_parameter s in
+    | BList(_) ->
+        let typaram = TypeParameter("a") in
         DefVal{
           val_name   = global_encoder Name.list;
           typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier Name.list, [!$ typaram])));
@@ -625,11 +678,11 @@ end = struct
           body       = Identifier(Var("Json.Encode.list"));
         }
 
-    | BOption(s) ->
-        let ovar_param = local_for_parameter s in
+    | BOption(_) ->
+        let ovar_param = Var("x") in
         let ovar_toenc = Var("opt") in
         let ovar_toencsub = Var("sub") in
-        let typaram = type_parameter s in
+        let typaram = TypeParameter("a") in
         let body =
           abstraction ovar_toenc
             (Case{
@@ -652,7 +705,7 @@ end = struct
 end
 
 
-let decoder_of_variable (x : variable) : Output.tree =
+let decoder_of_variable (x : Variable.t) : Output.tree =
   Output.identifier (Output.local_for_parameter x)
 
 
@@ -723,21 +776,21 @@ let generate_record_type (record : record) : Output.typ =
   Output.record_type tyrcd
 
 
-let make_decoder_function_type (params : (variable ranged) list) (ty : Output.typ) : Output.typ =
+let make_decoder_function_type (params : (Variable.t ranged) list) (ty : Output.typ) : Output.typ =
   List.fold_right (fun (_, x) ty ->
     let typaram = Output.type_parameter x in
     Output.function_type (Output.decoder_type (Output.type_variable typaram)) ty
   ) params (Output.decoder_type ty)
 
 
-let make_encoder_function_type (params : (variable ranged) list) (ty : Output.typ) : Output.typ =
+let make_encoder_function_type (params : (Variable.t ranged) list) (ty : Output.typ) : Output.typ =
   List.fold_right (fun (_, x) ty ->
     let typaram = Output.type_parameter x in
     Output.function_type (Output.encoder_type (Output.type_variable typaram)) ty
   ) params (Output.encoder_type ty)
 
 
-let encoder_of_variable (x : variable) : Output.tree =
+let encoder_of_variable (x : Variable.t) : Output.tree =
   Output.identifier (Output.local_for_parameter x)
 
 
@@ -747,14 +800,19 @@ let rec encoder_of_name (name : Name.t) (args : message list) : Output.tree =
 
 
 and encoder_of_record (rcd : message RecordMap.t) : Output.tree =
-  let x_record = Output.local_for_parameter "temp" in
+  let x_record =
+    match Variable.from_snake_case "temp" with
+    | Some(s) -> Output.local_for_parameter s
+    | None    -> assert false
+        (* TODO: make less ad-hoc *)
+  in
   let otrees =
     RecordMap.fold (fun key vmsg acc ->
       let otree_encoder = generate_message_encoder vmsg in
       let otree_encoded =
         Output.general_application otree_encoder (Output.record_field_access (Output.identifier(x_record)) key)
       in
-      let otree_pair = Output.tuple [ Output.string_literal (Key.lower_camel_case key); otree_encoded ] in
+      let otree_pair = Output.tuple [ Output.string_literal (Constant.key key); otree_encoded ] in
       Alist.extend acc otree_pair
     ) rcd Alist.empty |> Alist.to_list
   in

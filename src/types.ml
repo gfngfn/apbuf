@@ -1,41 +1,120 @@
 
+module CommonConstant : sig
+  val label_field : string
+  val arg_field : string
+end  = struct
+  let label_field = "_label"
+  let arg_field   = "_arg"
+end
+
+module Name : sig
+  type t
+  val pp : Format.formatter -> t -> unit
+  val compare : t -> t -> int
+  val from_snake_case : string -> t option
+  val to_snake_case : t -> string
+  val to_lower_camel_case : t -> string
+  val to_upper_camel_case : t -> string
+  val bool   : t
+  val int    : t
+  val string : t
+  val list   : t
+  val option : t
+end  = struct
+  include NameScheme
+
+  let make_exn s =
+    match from_snake_case s with
+    | Some(name) -> name
+    | None       -> assert false
+
+  let int    = make_exn "int"
+  let bool   = make_exn "bool"
+  let string = make_exn "string"
+  let list   = make_exn "list"
+  let option = make_exn "option"
+end
+
+module Variable : sig
+  type t
+  val pp : Format.formatter -> t -> unit
+  val compare : t -> t -> int
+  val from_snake_case : string -> t option
+  val to_snake_case : t -> string
+  val to_lower_camel_case : t -> string
+  val to_upper_camel_case : t -> string
+end = struct
+  include NameScheme
+end
+
 module Key : sig
   type t
   val pp : Format.formatter -> t -> unit
   val compare : t -> t -> int
-  val make : string -> t option
-  val snake_case : t -> string
-  val lower_camel_case : t -> string
+  val from_snake_case : string -> t option
+  val to_snake_case : t -> string
+  val to_lower_camel_case : t -> string
+  val to_upper_camel_case : t -> string
 end = struct
-  include Name
+  include NameScheme
+end
+
+module Constructor : sig
+  type t
+  val pp : Format.formatter -> t -> unit
+  val compare : t -> t -> int
+  val from_upper_camel_case : string -> t option
+  val to_snake_case : t -> string
+  val to_upper_camel_case : t -> string
+  val none : t
+  val some : t
+end = struct
+  include NameScheme
+
+  let none =
+    match from_upper_camel_case "None" with
+    | Some(c) -> c | None -> assert false
+
+  let some =
+    match from_upper_camel_case "Some" with
+    | Some(c) -> c | None -> assert false
 end
 
 type 'a ranged = Range.t * 'a
 [@@deriving show { with_path = false; }]
 
-type variable = string
+type constructor = Constructor.t
 [@@deriving show { with_path = false; }]
 
-type constructor = string
+type parsed_name = string
+[@@deriving show { with_path = false; }]
+
+type parsed_variable = string
+[@@deriving show { with_path = false; }]
+
+type parsed_key = string
+[@@deriving show { with_path = false; }]
+
+type parsed_constructor = string
 [@@deriving show { with_path = false; }]
 
 type parsed_message =
-  | PVariable of variable ranged
-  | PName    of string ranged * parsed_message list
+  | PVariable of parsed_variable ranged
+  | PName     of string ranged * parsed_message list
 [@@deriving show { with_path = false; }]
 
-type parsed_variant = (constructor ranged * parsed_message option) list
+type parsed_variant = (parsed_constructor ranged * parsed_message option) list
 [@@deriving show { with_path = false; }]
 
-type parsed_record = (string ranged * parsed_message) list
+type parsed_record = (parsed_key ranged * parsed_message) list
 [@@deriving show { with_path = false; }]
 
 type built_in =
   | BBool
   | BInt
   | BString
-  | BList   of variable
-  | BOption of variable
+  | BList   of string
+  | BOption of string
 
 type parsed_definition_main =
   | PBuiltIn      of built_in
@@ -44,11 +123,11 @@ type parsed_definition_main =
   | PGivenRecord  of parsed_record
 
 type parsed_definition = {
-  pdef_params : (Range.t * variable) list;
+  pdef_params : (Range.t * parsed_variable) list;
   pdef_main   : parsed_definition_main;
 }
 
-type parsed_declarations = (string ranged * parsed_definition) list
+type parsed_declarations = (parsed_name ranged * parsed_definition) list
 
 type meta_spec =
   | MetaOutput of string ranged * string ranged
@@ -64,19 +143,19 @@ let pp_record_map pp ppf rcdmap =
   );
   Format.fprintf ppf "@]}"
 
-module VariantMap = Map.Make(String)
+module VariantMap = Map.Make(Constructor)
 
 let pp_variant_map pp ppf variant =
   Format.fprintf ppf "@[<hov2>*V(@ ";
-  variant |> VariantMap.iter (fun k vopt ->
+  variant |> VariantMap.iter (fun ctor vopt ->
     match vopt with
-    | None    -> Format.fprintf ppf "%s,@ " k
-    | Some(v) -> Format.fprintf ppf "%s@ ->@ @[%a@],@ " k pp v
+    | None    -> Format.fprintf ppf "%a,@ " Constructor.pp ctor
+    | Some(v) -> Format.fprintf ppf "%a@ ->@ @[%a@],@ " Constructor.pp ctor pp v
   );
   Format.fprintf ppf "@])"
 
 type message =
-  | Variable of variable ranged
+  | Variable of Variable.t ranged
   | Name     of Name.t ranged * message list
 [@@deriving show { with_path = false; }]
 
@@ -95,7 +174,7 @@ type definition_main =
   | GivenRecord  of record
 
 type definition = {
-  def_params : (Range.t * variable) list;
+  def_params : (Range.t * Variable.t) list;
   def_main   : definition_main;
 }
 
@@ -106,14 +185,16 @@ type error =
   | EndOfLineInsideStringLiteral   of { start : Range.t; }
   | ParseErrorDetected             of { range : Range.t; }
   | MalformedName                  of { raw : string; range : Range.t; }
+  | MalformedVariable              of { raw : string; range : Range.t; }
   | MalformedKey                   of { raw : string; range : Range.t; }
+  | MalformedConstructor           of { raw : string; range : Range.t; }
   | UnsupportedTarget              of { target : string; }
   | MessageNameDefinedMoreThanOnce of { name : Name.t; range : Range.t; }
   | FieldDefinedMoreThanOnce       of { key : Key.t; range : Range.t; }
-  | ConstructorDefinedMoreThanOnce of { constructor : constructor; }
+  | ConstructorDefinedMoreThanOnce of { constructor : Constructor.t; range : Range.t; }
   | UndefinedMessageName           of { name : Name.t; }
-  | UndefinedVariable              of { variable : variable; range : Range.t; }
-  | VariableBoundMoreThanOnce      of { variable : variable; }
+  | UndefinedVariable              of { variable : Variable.t; range : Range.t; }
+  | VariableBoundMoreThanOnce      of { variable : Variable.t; }
   | InvalidMessageNameApplication of {
       name           : Name.t;
       expected_arity : int;
@@ -164,23 +245,39 @@ end
 
 let make_name ((rng, lower) : string ranged) : (Name.t ranged, error) result =
   let open ResultMonad in
-  match Name.make lower with
+  match Name.from_snake_case lower with
   | None       -> error (MalformedName{ raw = lower; range = rng; })
   | Some(name) -> return (rng, name)
 
 
+let make_variable ((rng, lower) : parsed_variable ranged) : (Variable.t ranged, error) result =
+  let open ResultMonad in
+  match Variable.from_snake_case lower with
+  | None    -> error (MalformedVariable{ raw = lower; range = rng; })
+  | Some(x) -> return (rng, x)
+
+
 let make_key ((rng, lower) : string ranged) : (Key.t ranged, error) result =
   let open ResultMonad in
-  match Key.make lower with
+  match Key.from_snake_case lower with
   | None      -> error (MalformedKey{ raw = lower; range = rng; })
   | Some(key) -> return (rng, key)
+
+
+let make_constructor ((rng, sctor) : string ranged) : (Constructor.t ranged, error) result =
+  let open ResultMonad in
+  match Constructor.from_upper_camel_case sctor with
+  | None       -> error (MalformedConstructor{ raw = sctor; range = rng; })
+  | Some(ctor) -> return (rng, ctor)
+
 
 
 let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   let open ResultMonad in
   match pmsg with
-  | PVariable(x) ->
-      return (Variable(x))
+  | PVariable(rlower) ->
+      make_variable rlower >>= fun rx ->
+      return (Variable(rx))
 
   | PName(rlower, pargs) ->
       make_name rlower >>= fun rname ->
@@ -194,10 +291,11 @@ let rec normalize_message (pmsg : parsed_message) : (message, error) result =
 
 let normalize_variant (pvariant : parsed_variant) : (variant, error) result =
   let open ResultMonad in
-  pvariant |> List.fold_left (fun res ((_, ctor), pmsgsubopt) ->
+  pvariant |> List.fold_left (fun res (rupper, pmsgsubopt) ->
     res >>= fun variantmap ->
+    make_constructor rupper >>= fun (rng, ctor) ->
     if variantmap |> VariantMap.mem ctor then
-      error (ConstructorDefinedMoreThanOnce{ constructor = ctor; })
+      error (ConstructorDefinedMoreThanOnce{ constructor = ctor; range = rng; })
     else
       begin
         match pmsgsubopt with
@@ -249,12 +347,17 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
             normalize_record precord >>= fun record ->
             return (GivenRecord(record))
       end >>= fun defmain ->
-      let def = { def_params = pdef.pdef_params; def_main = defmain } in
+      pdef.pdef_params |> List.fold_left (fun res rlower ->
+        res >>= fun paramacc ->
+        make_variable rlower >>= fun rx ->
+        return (Alist.extend paramacc rx)
+      ) (return Alist.empty) >>= fun paramacc ->
+      let def = { def_params = Alist.to_list paramacc; def_main = defmain } in
       return (declmap |> DeclMap.add name def)
   ) (return DeclMap.empty)
 
 
-let rec validate_message (find_arity : Name.t -> int option) (is_defined_variable : variable -> bool) (msg : message) : (unit, error) result =
+let rec validate_message (find_arity : Name.t -> int option) (is_defined_variable : Variable.t -> bool) (msg : message) : (unit, error) result =
   let iter = validate_message find_arity is_defined_variable in
   let open ResultMonad in
   match msg with
@@ -287,7 +390,7 @@ let rec validate_message (find_arity : Name.t -> int option) (is_defined_variabl
       end
 
 
-let validate_variant (find_arity : Name.t -> int option) (is_defined_variable : variable -> bool) (variant : variant) : (unit, error) result =
+let validate_variant (find_arity : Name.t -> int option) (is_defined_variable : Variable.t -> bool) (variant : variant) : (unit, error) result =
   let open ResultMonad in
   VariantMap.fold (fun _ctor argmsgopt res ->
     res >>= fun () ->
@@ -297,7 +400,7 @@ let validate_variant (find_arity : Name.t -> int option) (is_defined_variable : 
   ) variant (return ())
 
 
-let validate_record (find_arity : Name.t -> int option) (is_defined_variable : variable -> bool) (record : record) : (unit, error) result =
+let validate_record (find_arity : Name.t -> int option) (is_defined_variable : Variable.t -> bool) (record : record) : (unit, error) result =
   let open ResultMonad in
   RecordMap.fold (fun _key vmsg res ->
     res >>= fun () ->
@@ -306,10 +409,10 @@ let validate_record (find_arity : Name.t -> int option) (is_defined_variable : v
 
 
 
-module ParamSet = Set.Make(String)
+module ParamSet = Set.Make(Variable)
 
 
-let validate_parameters (params : (Range.t * variable) list) : (ParamSet.t, error) result =
+let validate_parameters (params : (Variable.t ranged) list) : (ParamSet.t, error) result =
   let open ResultMonad in
   params |> List.fold_left (fun res (_, x) ->
     res >>= fun set ->
@@ -349,7 +452,7 @@ let validate_declarations (decls : declarations) : (unit, error) result =
 
 let built_in_declarations : parsed_declarations =
   let ( !@ ) t = (Range.dummy t, t) in
-  let ( ==> ) (x : string ranged) ((params, info) : (variable ranged) list * built_in) =
+  let ( ==> ) (x : string ranged) ((params, info) : (parsed_variable ranged) list * built_in) =
     (x, { pdef_params = params; pdef_main = PBuiltIn(info); })
   in
   [

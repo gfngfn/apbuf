@@ -5,14 +5,15 @@
 %token EOI
 %token<Range.t> DEFEQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
 %token<Range.t> META_OUTPUT
-%token<Range.t * Types.variable> VARIABLE
+%token<Range.t * Types.parsed_variable> VARIABLE
 %token<Range.t * string> LOWER
 %token<Range.t * string> UPPER
 %token<Range.t * string> STRING
 
 %start toplevel
+%type<((Range.t * Types.parsed_constructor) * Types.parsed_message option) list> variant
 %type<Types.top_level> toplevel
-%type<(Range.t * Types.variable) list> params
+%type<(Range.t * Types.parsed_variable) list> params
 %type<Types.parsed_message list> argssub
 
 %%

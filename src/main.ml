@@ -5,7 +5,7 @@ open Types
 
 let pp decls s =
   let pp_params ppf params =
-    let xs = params |> List.map snd in
+    let xs = params |> List.map snd |> List.map Variable.to_snake_case in
     let s =
       match xs with
       | []     -> ""
