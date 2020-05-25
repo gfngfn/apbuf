@@ -1,6 +1,52 @@
 
 open Types
 
+module Constant : sig
+  val global_decoder : Name.t -> string
+  val global_encoder : Name.t -> string
+  val local_for_key : Key.t -> string
+  val type_identifier : Name.t -> string
+  val label_field : string
+  val arg_field : string
+end = struct
+
+  let global_decoder name =
+    "decode" ^ Name.to_upper_camel_case name
+
+
+  let global_encoder name =
+    "encode" ^ Name.to_upper_camel_case name
+
+
+  let local_for_key key =
+    "local_key_" ^ (Key.to_snake_case key)
+
+
+  let builtin_type_candidates =
+    let ( ==> ) x y = (x, y) in
+    [
+      Name.bool   ==> "Bool";
+      Name.int    ==> "Int";
+      Name.string ==> "String";
+      Name.list   ==> "List";
+      Name.option ==> "Maybe";
+    ]
+
+    let type_identifier name =
+      match
+        builtin_type_candidates |> List.find_map (fun (namex, s) ->
+          if Name.compare namex name = 0 then Some(s) else None
+        )
+      with
+      | Some(s) -> s
+      | None    -> Name.to_upper_camel_case name
+
+
+  let label_field = "_label"
+  let arg_field   = "_arg"
+
+end
+
 
 module Output : sig
 
@@ -49,25 +95,20 @@ module Output : sig
 
 end = struct
 
-  let label_key    = "_label"
-  let argument_key = "_arg"
-
-
   type identifier =
     | Var of string
 
 
   let global_decoder name =
-    Var("decode" ^ Name.to_upper_camel_case name)
+    Var(Constant.global_decoder name)
 
 
   let global_encoder name =
-    Var("encode" ^ Name.to_upper_camel_case name)
+    Var(Constant.global_encoder name)
 
 
   let local_for_key key =
-    let s = Key.to_snake_case key in
-    Var("local_key_" ^ s)
+    Var(Constant.local_for_key key)
 
 
   let local_for_parameter x =
@@ -185,13 +226,13 @@ end = struct
   let access_argument (otree : tree) =
     Application{
       applied = Identifier(Var("Json.Decode.field"));
-      arguments = [ StringLiteral(argument_key); otree; ]
+      arguments = [ StringLiteral(Constant.arg_field); otree; ]
     }
 
 
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
-      decode_field_access_raw label_key (Identifier(Var("Json.Decode.string")))
+      decode_field_access_raw Constant.label_field (Identifier(Var("Json.Decode.string")))
     in
     let otree_cont =
       let ovar_temp = Var("temp") in
@@ -238,11 +279,11 @@ end = struct
 
   let encode_variant (label : string) (argopt : tree option) : tree =
     let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
-    let otree_label_keyval = tuple [ string_literal label_key; otree_label ] in
+    let otree_label_keyval = tuple [ string_literal Constant.label_field; otree_label ] in
     let entries =
       match argopt with
       | None      -> [ otree_label_keyval ]
-      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal argument_key; arg ] ]
+      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal Constant.arg_field; arg ] ]
     in
     encode_record (list entries)
 
@@ -286,28 +327,8 @@ end = struct
     | TypeIdentifier of string
 
 
-  let builtin_type_candidates =
-    let ( ==> ) x y = (x, y) in
-    [
-      Name.bool   ==> "Bool";
-      Name.int    ==> "Int";
-      Name.string ==> "String";
-      Name.list   ==> "List";
-      Name.option ==> "Maybe";
-    ]
-
-
   let type_identifier name =
-    let s =
-      match
-        builtin_type_candidates |> List.find_map (fun (namex, s) ->
-          if Name.compare namex name = 0 then Some(s) else None
-        )
-      with
-      | Some(s) -> s
-      | None    -> Name.to_upper_camel_case name
-    in
-    TypeIdentifier(s)
+    TypeIdentifier(Constant.type_identifier name)
 
 
   type type_parameter =
