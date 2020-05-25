@@ -7,6 +7,7 @@ module Constant : sig
   val local_for_key : Key.t -> string
   val local_for_parameter : Variable.t -> string
   val key : Key.t -> string
+  val constructor : Constructor.t -> string
   val type_identifier : Name.t -> string
   val type_parameter : Variable.t -> string
 end = struct
@@ -49,6 +50,10 @@ end = struct
       s ^ "_"
     else
       s
+
+
+  let constructor =
+    Constructor.to_upper_camel_case
 
 
   let builtin_type_candidates =
@@ -189,7 +194,7 @@ end = struct
 
 
   let constructor ctor =
-    Constructor(Constructor.to_upper_camel_case ctor)
+    Constructor(Constant.constructor ctor)
 
 
   let record orcd =
@@ -259,7 +264,7 @@ end = struct
       let branches =
         let acc =
           VariantMap.fold (fun ctor branch acc ->
-            Alist.extend acc (StringPattern(Constructor.to_upper_camel_case ctor), branch)
+            Alist.extend acc (StringPattern(CommonConstant.label_for_json ctor), branch)
           ) omap Alist.empty
         in
         let ovar_other = Var("other") in
@@ -297,8 +302,8 @@ end = struct
     List(otrees)
 
 
-  let encode_variant (label : string) (argopt : tree option) : tree =
-    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
+  let encode_variant (jctor : string) (argopt : tree option) : tree =
+    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal jctor) in
     let otree_label_keyval = tuple [ string_literal CommonConstant.label_field; otree_label ] in
     let entries =
       match argopt with
@@ -321,9 +326,9 @@ end = struct
           | Some(enc) ->
               (Some(general_application enc (identifier ovar_toencsub)), Some(IdentifierPattern(ovar_toencsub)))
         in
-        let sctor = Constructor.to_upper_camel_case ctor in
-        let pat = ConstructorPattern(sctor, paramopt) in
-        Alist.extend acc (pat, encode_variant sctor otreeopt)
+        let jctor = CommonConstant.label_for_json ctor in
+        let pat = ConstructorPattern(jctor, paramopt) in
+        Alist.extend acc (pat, encode_variant jctor otreeopt)
       ) variant Alist.empty |> Alist.to_list
     in
     Abstract{
@@ -579,7 +584,7 @@ end = struct
               | Some(ty) -> " "  ^ (stringify_type ty)
             in
             let sep = if index == 0 then "=" else "|" in
-            Format.sprintf "  %s %s%s" sep (Constructor.to_upper_camel_case ctor) sarg
+            Format.sprintf "  %s %s%s" sep (Constant.constructor ctor) sarg
           )
         in
         Format.sprintf "type %s%s\n%s"

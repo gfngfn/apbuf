@@ -6,6 +6,7 @@ module Constant : sig
   val global_writes_name : Name.t -> string
   val local_for_parameter : Variable.t -> string
   val key : Key.t -> string
+  val constructor : Constructor.t -> string
   val type_identifier : Name.t -> string
   val type_parameter : Variable.t -> string
 end = struct
@@ -53,6 +54,10 @@ end = struct
       s ^ "_"
     else
       s
+
+
+  let constructor =
+    Constructor.to_upper_camel_case
 
 
   let builtin_type_candidates =
@@ -327,7 +332,7 @@ end = struct
         in
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Constant.key key in
+            let skey = CommonConstant.key_for_json key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
@@ -343,7 +348,7 @@ end = struct
       } ->
         let smain =
           RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = Constant.key key in
+            let skey = CommonConstant.key_for_json key in
             let sty = stringify_type oty in
             let sdec = stringify_tree otree_decoder in
             let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty sdec in
@@ -360,11 +365,12 @@ end = struct
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
           VariantMap.fold (fun ctor otreeopt acc ->
-            let sctor = Constructor.to_upper_camel_case ctor in
+            let jctor = CommonConstant.label_for_json ctor in
+            let sctor = Constant.constructor ctor in
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" sctor sctor
+                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" jctor sctor
 
               | Some(oty, otree_decoder) ->
                   let sty = stringify_type oty in
@@ -389,11 +395,12 @@ end = struct
         in
         let scases =
           VariantMap.fold (fun ctor otreeopt acc ->
-            let sctor = Constructor.to_upper_camel_case ctor in
+            let jctor = CommonConstant.label_for_json ctor in
+            let sctor = Constant.constructor ctor in
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case %s() => Json.obj(\"%s\" -> JsString(\"%s\"))" sctor CommonConstant.label_field sctor
+                  Printf.sprintf "case %s() => Json.obj(\"%s\" -> JsString(\"%s\"))" sctor CommonConstant.label_field jctor
 
               | Some(_oty, otree_encoder) ->
                   let senc = stringify_tree otree_encoder in
@@ -430,7 +437,7 @@ end = struct
         let smain = Printf.sprintf "%s%s" tynm paramseq in
         let sctors =
           VariantMap.fold (fun ctor otyopt acc ->
-            let sctor = Constructor.to_upper_camel_case ctor in
+            let sctor = Constant.constructor ctor in
             let s =
               match otyopt with
               | None ->

@@ -1,12 +1,4 @@
 
-module CommonConstant : sig
-  val label_field : string
-  val arg_field : string
-end  = struct
-  let label_field = "_label"
-  let arg_field   = "_arg"
-end
-
 module Name : sig
   type t
   val pp : Format.formatter -> t -> unit
@@ -78,6 +70,18 @@ end = struct
   let some =
     match from_upper_camel_case "Some" with
     | Some(c) -> c | None -> assert false
+end
+
+module CommonConstant : sig
+  val label_field : string
+  val arg_field : string
+  val key_for_json : Key.t -> string
+  val label_for_json : Constructor.t -> string
+end  = struct
+  let label_field = "_label"
+  let arg_field   = "_arg"
+  let key_for_json = Key.to_snake_case
+  let label_for_json = Constructor.to_upper_camel_case
 end
 
 type 'a ranged = Range.t * 'a
