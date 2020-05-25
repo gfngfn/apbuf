@@ -1,6 +1,48 @@
 
 open Types
 
+module Constant : sig
+  val global_reads_name : Name.t -> string
+  val global_writes_name : Name.t -> string
+  val type_identifier : Name.t -> string
+  val label_field : string
+  val arg_field : string
+end = struct
+
+  let global_reads_name name =
+    Name.to_lower_camel_case name ^ "Reads"
+
+
+  let global_writes_name name =
+    Name.to_lower_camel_case name ^ "Writes"
+
+
+  let builtin_type_candidates =
+    let ( ==> ) x y = (x, y) in
+    [
+      Name.bool   ==> "Boolean";
+      Name.int    ==> "Int";
+      Name.string ==> "String";
+      Name.list   ==> "List";
+      Name.option ==> "Option";
+    ]
+
+
+  let type_identifier name =
+    match
+      builtin_type_candidates |> List.find_map (fun (namex, s) ->
+        if Name.compare namex name = 0 then Some(s) else None
+      )
+    with
+    | Some(s) -> s
+    | None    -> Name.to_upper_camel_case name
+
+
+  let label_field = "_label"
+  let arg_field   = "_arg"
+
+end
+
 
 module Output : sig
   type identifier
@@ -37,11 +79,11 @@ end = struct
 
 
   let global_reads name =
-    Var(Name.to_lower_camel_case name ^ "Reads")
+    Var(Constant.global_reads_name name)
 
 
   let global_writes name =
-    Var(Name.to_lower_camel_case name ^ "Writes")
+    Var(Constant.global_writes_name name)
 
 
   let local_for_parameter x =
@@ -52,28 +94,8 @@ end = struct
     | TypeIdentifier of string
 
 
-  let builtin_type_candidates =
-    let ( ==> ) x y = (x, y) in
-    [
-      Name.bool   ==> "Boolean";
-      Name.int    ==> "Int";
-      Name.string ==> "String";
-      Name.list   ==> "List";
-      Name.option ==> "Option";
-    ]
-
-
   let type_identifier (name : Name.t) =
-    let s =
-      match
-        builtin_type_candidates |> List.find_map (fun (namex, s) ->
-          if Name.compare namex name = 0 then Some(s) else None
-        )
-      with
-      | Some(s) -> s
-      | None    -> Name.to_upper_camel_case name
-    in
-    TypeIdentifier(s)
+    TypeIdentifier(Constant.type_identifier name)
 
 
   type type_parameter =
@@ -316,13 +338,13 @@ end = struct
               | Some(oty, otree_decoder) ->
                   let sty = stringify_type oty in
                   let sdec = stringify_tree otree_decoder in
-                  Printf.sprintf "case \"%s\" => (JsPath \\ \"arg\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" sctor sty sdec sctor
+                  Printf.sprintf "case \"%s\" => (JsPath \\ \"%s\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" sctor Constant.arg_field sty sdec sctor
             in
             Alist.extend acc s
 
           ) ctors Alist.empty |> Alist.to_list |> String.concat " "
         in
-        Printf.sprintf "(JsPath \\ \"label\").read[String].flatMap { (label: String) => label match { %s }}" scases
+        Printf.sprintf "(JsPath \\ \"%s\").read[String].flatMap { (label: String) => label match { %s }}" Constant.label_field scases
 
     | VariantWrites{
         type_name    = TypeIdentifier(tynm);
@@ -340,15 +362,15 @@ end = struct
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case %s() => Json.obj(\"label\" -> JsString(\"%s\"))" sctor sctor
+                  Printf.sprintf "case %s() => Json.obj(\"%s\" -> JsString(\"%s\"))" sctor Constant.label_field sctor
 
               | Some(_oty, otree_encoder) ->
                   let senc = stringify_tree otree_encoder in
                   let slabel =
-                    Printf.sprintf "\"label\" -> JsString(\"%s\")" sctor
+                    Printf.sprintf "\"%s\" -> JsString(\"%s\")" Constant.label_field sctor
                   in
                   let sarg =
-                    Printf.sprintf "\"arg\" -> Json.toJson(arg)(%s)" senc
+                    Printf.sprintf "\"%s\" -> Json.toJson(arg)(%s)" Constant.arg_field senc
                   in
                   Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" sctor slabel sarg
             in
