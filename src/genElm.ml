@@ -9,8 +9,6 @@ module Constant : sig
   val key : Key.t -> string
   val type_identifier : Name.t -> string
   val type_parameter : Variable.t -> string
-  val label_field : string
-  val arg_field : string
 end = struct
 
   let global_decoder name =
@@ -76,10 +74,6 @@ end = struct
 
   let type_parameter x =
     "ty" ^ (Variable.to_upper_camel_case x)
-
-
-  let label_field = "_label"
-  let arg_field   = "_arg"
 
 end
 
@@ -252,13 +246,13 @@ end = struct
   let access_argument (otree : tree) =
     Application{
       applied = Identifier(Var("Json.Decode.field"));
-      arguments = [ StringLiteral(Constant.arg_field); otree; ]
+      arguments = [ StringLiteral(CommonConstant.arg_field); otree; ]
     }
 
 
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
-      decode_field_access_raw Constant.label_field (Identifier(Var("Json.Decode.string")))
+      decode_field_access_raw CommonConstant.label_field (Identifier(Var("Json.Decode.string")))
     in
     let otree_cont =
       let ovar_temp = Var("temp") in
@@ -305,11 +299,11 @@ end = struct
 
   let encode_variant (label : string) (argopt : tree option) : tree =
     let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal label) in
-    let otree_label_keyval = tuple [ string_literal Constant.label_field; otree_label ] in
+    let otree_label_keyval = tuple [ string_literal CommonConstant.label_field; otree_label ] in
     let entries =
       match argopt with
       | None      -> [ otree_label_keyval ]
-      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal Constant.arg_field; arg ] ]
+      | Some(arg) -> [ otree_label_keyval; tuple [ string_literal CommonConstant.arg_field; arg ] ]
     in
     encode_record (list entries)
 

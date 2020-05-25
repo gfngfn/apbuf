@@ -1,4 +1,12 @@
 
+module CommonConstant : sig
+  val label_field : string
+  val arg_field : string
+end  = struct
+  let label_field = "_label"
+  let arg_field   = "_arg"
+end
+
 module Name : sig
   type t
   val pp : Format.formatter -> t -> unit

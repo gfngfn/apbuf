@@ -8,8 +8,6 @@ module Constant : sig
   val key : Key.t -> string
   val type_identifier : Name.t -> string
   val type_parameter : Variable.t -> string
-  val label_field : string
-  val arg_field : string
 end = struct
 
   let global_reads_name name =
@@ -80,10 +78,6 @@ end = struct
 
   let type_parameter x =
     Variable.to_upper_camel_case x
-
-
-  let label_field = "_label"
-  let arg_field   = "_arg"
 
 end
 
@@ -375,13 +369,13 @@ end = struct
               | Some(oty, otree_decoder) ->
                   let sty = stringify_type oty in
                   let sdec = stringify_tree otree_decoder in
-                  Printf.sprintf "case \"%s\" => (JsPath \\ \"%s\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" sctor Constant.arg_field sty sdec sctor
+                  Printf.sprintf "case \"%s\" => (JsPath \\ \"%s\").read[%s](%s).flatMap { (x) => Reads.pure(%s(x)) }" sctor CommonConstant.arg_field sty sdec sctor
             in
             Alist.extend acc s
 
           ) ctors Alist.empty |> Alist.to_list |> String.concat " "
         in
-        Printf.sprintf "(JsPath \\ \"%s\").read[String].flatMap { (label: String) => label match { %s }}" Constant.label_field scases
+        Printf.sprintf "(JsPath \\ \"%s\").read[String].flatMap { (label: String) => label match { %s }}" CommonConstant.label_field scases
 
     | VariantWrites{
         type_name    = TypeIdentifier(tynm);
@@ -399,15 +393,15 @@ end = struct
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case %s() => Json.obj(\"%s\" -> JsString(\"%s\"))" sctor Constant.label_field sctor
+                  Printf.sprintf "case %s() => Json.obj(\"%s\" -> JsString(\"%s\"))" sctor CommonConstant.label_field sctor
 
               | Some(_oty, otree_encoder) ->
                   let senc = stringify_tree otree_encoder in
                   let slabel =
-                    Printf.sprintf "\"%s\" -> JsString(\"%s\")" Constant.label_field sctor
+                    Printf.sprintf "\"%s\" -> JsString(\"%s\")" CommonConstant.label_field sctor
                   in
                   let sarg =
-                    Printf.sprintf "\"%s\" -> Json.toJson(arg)(%s)" Constant.arg_field senc
+                    Printf.sprintf "\"%s\" -> Json.toJson(arg)(%s)" CommonConstant.arg_field senc
                   in
                   Printf.sprintf "case %s(arg) => Json.obj(%s, %s)" sctor slabel sarg
             in
