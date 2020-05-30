@@ -3,8 +3,8 @@ TEST_BAR_ELM_MODULE=Bar
 
 .PHONY: all
 all: src/*
-	dune build src/main.exe
-	cp ./_build/default/src/main.exe ./apbuf
+	dune build src/apbuf.exe
+	cp ./_build/default/src/apbuf.exe ./apbuf
 
 .PHONY: clean
 clean:
