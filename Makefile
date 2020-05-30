@@ -7,6 +7,8 @@ all: src/*
 .PHONY: clean
 clean:
 	dune clean
+	rm -f examples/gen/elm/src/*.elm
+	rm -f examples/gen/play-scala-seed/app/assets/apbuf/*.scala
 
 .PHONY: test
 test: test-bar

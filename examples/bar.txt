@@ -1,5 +1,5 @@
 @output "elm": { dir = "./gen/elm/src" }
-@output "scala": { dir = "./gen/play-scala-seed/app/controllers" }
+@output "scala": { dir = "./gen/play-scala-seed/app/assets/apbuf" }
 
 geometry :=
   | Rectangle : rectangle_info(int)
