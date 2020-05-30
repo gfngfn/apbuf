@@ -26,10 +26,15 @@ meta:
 | META_OUTPUT; s=STRING; COLON; dict=dict { MetaOutput(s, dict) }
 ;
 dict:
-| posL=BRECORD; fields=list(field); posR=ERECORD {
+| posL=BRECORD; fields=fields; posR=ERECORD {
     let rng = Range.unite posL posR in
     (rng, fields)
   }
+;
+fields:
+|                                 { [] }
+| field=field                     { field :: [] }
+| field=field; COMMA; tail=fields { field :: tail }
 ;
 field:
 | key=LOWER; EQ; v=value { (key, v) }
