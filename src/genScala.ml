@@ -336,7 +336,7 @@ end = struct
               let sdec = stringify_tree otree_decoder in
               Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s).flatMap { (x: %s) => Reads.pure(%s(x)) }" skey sty sdec sty tynm
 
-          | _ :: _ ->
+          | _ :: _ :: _ ->
               let styparamseq =
                 match otyparams with
                 | []     -> ""
@@ -359,21 +359,34 @@ end = struct
         type_params = otyparams;
         entries     = entries;
       } ->
-        let smain =
-          RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = CommonConstant.key_for_json key in
-            let sty = stringify_type oty in
-            let sdec = stringify_tree otree_decoder in
-            let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty sdec in
-            Alist.extend acc s
-          ) entries Alist.empty |> Alist.to_list |> String.concat " and "
-        in
         let styparamseq =
           match otyparams with
           | []     -> ""
           | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
         in
-        Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm styparamseq
+        begin
+          match RecordMap.bindings entries with
+          | [] ->
+              assert false
+
+          | (key, (oty, otree_encoder)) :: [] ->
+              let skey = CommonConstant.key_for_json key in
+              let sty = stringify_type oty in
+              let senc = stringify_tree otree_encoder in
+              Printf.sprintf "(Writes.apply { (x: %s%s) => x match { case %s(arg) => Json.obj(\"%s\" -> Json.toJson[%s](arg)(%s)) } })" tynm styparamseq tynm skey sty senc
+
+          | _ :: _ :: _ ->
+              let smain =
+                RecordMap.fold (fun key (oty, otree_encoder) acc ->
+                  let skey = CommonConstant.key_for_json key in
+                  let sty = stringify_type oty in
+                  let senc = stringify_tree otree_encoder in
+                  let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty senc in
+                  Alist.extend acc s
+                ) entries Alist.empty |> Alist.to_list |> String.concat " and "
+              in
+              Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm styparamseq
+        end
 
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
