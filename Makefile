@@ -26,7 +26,7 @@ clean-test:
 	rm -f examples/gen/elm/src/*.elm
 	rm -f examples/gen/play-scala-seed/app/assets/apbuf/*.scala
 
-.PHONY: test
+.PHONY: test install
 test: test-bar test-foo
 
 .PHONY: test-bar

@@ -720,6 +720,17 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       CommonConstant.arg_field;
       "      }\n";
       "    }\n";
+      "  def optionWrites[A](w: Writes[A]): Writes[Option[A]] =\n";
+      "    Writes.apply { (x: Option[A]) =>\n";
+      "      x match {\n";
+      Printf.sprintf
+      "        case None => Json.obj(\"%s\" -> JsString(\"None\"))\n"
+      CommonConstant.label_field;
+      Printf.sprintf
+      "        case Some(arg) => Json.obj(\"%s\" -> JsString(\"Some\"), \"%s\" -> Json.toJson(arg)(w))\n"
+      CommonConstant.label_field CommonConstant.arg_field;
+      "      }\n";
+      "    }\n";
       "\n";
     ];
     sdecls;
