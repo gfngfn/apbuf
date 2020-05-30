@@ -328,7 +328,7 @@ end = struct
         begin
           match RecordMap.bindings entries with
           | [] ->
-              assert false
+              Printf.sprintf "Reads.pure(%s())" tynm
 
           | (key, (oty, otree_decoder)) :: [] ->
               let skey = CommonConstant.key_for_json key in
@@ -367,7 +367,7 @@ end = struct
         begin
           match RecordMap.bindings entries with
           | [] ->
-              assert false
+              "(Writes.apply { (_) => Json.obj() })"
 
           | (key, (oty, otree_encoder)) :: [] ->
               let skey = CommonConstant.key_for_json key in
