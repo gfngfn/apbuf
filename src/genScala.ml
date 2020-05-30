@@ -370,7 +370,7 @@ end = struct
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" jctor sctor
+                  Printf.sprintf "case \"%s\" => Reads.pure(%s())" jctor sctor
 
               | Some(oty, otree_decoder) ->
                   let sty = stringify_type oty in
