@@ -26,17 +26,17 @@ clean-test:
 	rm -f examples/gen/elm/src/*.elm
 	rm -f examples/gen/play-scala-seed/app/assets/apbuf/*.scala
 
-.PHONY: test install
+.PHONY: test
 test: test-bar test-foo
 
 .PHONY: test-bar
-test-bar:
+test-bar: install
 	apbuf examples/bar.txt
 	cd examples/gen/elm && elm make src/$(TEST_BAR_ELM_MODULE).elm && cd ../../..
 	cd examples/gen/play-scala-seed && sbt compile && cd ../../..
 
 .PHONY: test-foo
-test-foo:
+test-foo: install
 	apbuf examples/foo.txt
 	cd examples/gen/elm && elm make src/$(TEST_FOO_ELM_MODULE).elm && cd ../../..
 	cd examples/gen/play-scala-seed && sbt compile && cd ../../..

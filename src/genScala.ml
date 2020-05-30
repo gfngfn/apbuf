@@ -709,6 +709,8 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "  def intWrites() = IntWrites\n";        (* TODO; make this less ad-hoc *)
       "  def stringReads() = StringReads\n";    (* TODO; make this less ad-hoc *)
       "  def stringWrites() = StringWrites\n";  (* TODO; make this less ad-hoc *)
+      "  def listReads[A](r: Reads[A]): Reads[List[A]] = Reads.list(r)\n";
+      "  def listWrites[A](w: Writes[A]): Writes[List[A]] = Writes.list(w)\n";
       "  def optionReads[A](r: Reads[A]): Reads[Option[A]] =\n";
       Printf.sprintf
       "    (JsPath \\ \"%s\").read[String].flatMap { (label: String) =>\n"
