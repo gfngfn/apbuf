@@ -51,6 +51,12 @@ let validate_string_value (_rng, mv) : (string, error) result =
   | VString(s) -> return s
 
 
+let get_mandatory_string rdict key =
+  let open ResultMonad in
+  get_mandatory_value rdict key >>= fun rmv ->
+  validate_string_value rmv
+
+
 let get_dir_out (dir_in : string) (rdict : dictionary) : (string, error) result =
   let open ResultMonad in
   get_mandatory_value rdict "dir" >>= fun rmv ->
@@ -67,7 +73,7 @@ let get_dir_out (dir_in : string) (rdict : dictionary) : (string, error) result 
 let generate_elm (dir_in : string) (rdict : dictionary) (decls : declarations) : (unit, error) result =
   let open ResultMonad in
   get_dir_out dir_in rdict >>= fun dir_out ->
-  let module_name = "APBufGen" in
+  get_mandatory_string rdict "module" >>= fun module_name ->
   let s = GenElm.generate module_name decls in
   let path_out = Filename.concat dir_out (module_name ^ ".elm") in
   Format.printf "writing output on '%s' ...\n" path_out;
@@ -135,7 +141,8 @@ let main path_in =
       print_endline "finished."
 
   | Error(e) ->
-      Format.printf "! Error:@ %a" pp_error e
+      Format.printf "! Error:@ %a" pp_error e;
+      exit 1
 
 
 (** The spec for the anonimous argument that points to an input. *)

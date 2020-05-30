@@ -1,4 +1,7 @@
-@output "elm": { dir = "./gen/elm/src" }
+@output "elm": {
+  dir    = "./gen/elm/src",
+  module = "Bar",
+}
 @output "scala": { dir = "./gen/play-scala-seed/app/assets/apbuf" }
 
 geometry :=
