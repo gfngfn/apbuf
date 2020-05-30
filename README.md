@@ -114,7 +114,7 @@ object Bar {
 ## Syntax of configuration files
 
 ```
-s ::= (a string literal enclosed by double quotation marks)
+stringlit ::= (a string literal enclosed by double quotation marks)
 ident ::= (a lowercased identifier)
 x ::= (a lowercased identifier with a preceding dollar sign)
 
@@ -122,8 +122,19 @@ toplevel ::=
   | metas decls
 
 metas ::=
-  | '@output' s ':' s metas
+  | '@output' stringlit ':' dict metas
   | (empty)
+
+dict ::=
+  | '{' fields '}'
+
+fields ::=
+  | ident '=' metaval ',' fields
+  | ident '=' metaval
+  | (empty)
+
+metaval ::=
+  | stringlit
 
 // declarations
 decls ::=
