@@ -14,6 +14,17 @@ In exchange for its clean representation, APBuf at least currently does not purs
   - Scala
 
 
+## How to install
+
+Under the condition that `dune` and `make` are installed, invoke:
+
+```console
+$ make install
+```
+
+and then the executable file `apbuf` will be installed.
+
+
 ## Example
 
 The following configuration file:
