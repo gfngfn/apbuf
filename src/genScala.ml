@@ -325,42 +325,68 @@ end = struct
         type_params = otyparams;
         entries     = entries;
       } ->
-        let styparamseq =
-          match otyparams with
-          | []     -> ""
-          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
-        in
-        let smain =
-          RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = CommonConstant.key_for_json key in
-            let sty = stringify_type oty in
-            let sdec = stringify_tree otree_decoder in
-            let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
-            Alist.extend acc s
-          ) entries Alist.empty |> Alist.to_list |> String.concat " and "
-        in
-        Printf.sprintf "(%s)(%s.apply%s _)" smain tynm styparamseq
+        begin
+          match RecordMap.bindings entries with
+          | [] ->
+              assert false
+
+          | (key, (oty, otree_decoder)) :: [] ->
+              let skey = CommonConstant.key_for_json key in
+              let sty = stringify_type oty in
+              let sdec = stringify_tree otree_decoder in
+              Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s).flatMap { (x: %s) => Reads.pure(%s(x)) }" skey sty sdec sty tynm
+
+          | _ :: _ :: _ ->
+              let styparamseq =
+                match otyparams with
+                | []     -> ""
+                | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+              in
+              let smain =
+                RecordMap.fold (fun key (oty, otree_decoder) acc ->
+                  let skey = CommonConstant.key_for_json key in
+                  let sty = stringify_type oty in
+                  let sdec = stringify_tree otree_decoder in
+                  let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
+                  Alist.extend acc s
+                ) entries Alist.empty |> Alist.to_list |> String.concat " and "
+              in
+              Printf.sprintf "(%s)(%s.apply%s _)" smain tynm styparamseq
+        end
 
     | RecordWrites{
         type_name   = TypeIdentifier(tynm);
         type_params = otyparams;
         entries     = entries;
       } ->
-        let smain =
-          RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = CommonConstant.key_for_json key in
-            let sty = stringify_type oty in
-            let sdec = stringify_tree otree_decoder in
-            let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty sdec in
-            Alist.extend acc s
-          ) entries Alist.empty |> Alist.to_list |> String.concat " and "
-        in
         let styparamseq =
           match otyparams with
           | []     -> ""
           | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
         in
-        Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm styparamseq
+        begin
+          match RecordMap.bindings entries with
+          | [] ->
+              assert false
+
+          | (key, (oty, otree_encoder)) :: [] ->
+              let skey = CommonConstant.key_for_json key in
+              let sty = stringify_type oty in
+              let senc = stringify_tree otree_encoder in
+              Printf.sprintf "(Writes.apply { (x: %s%s) => x match { case %s(arg) => Json.obj(\"%s\" -> Json.toJson[%s](arg)(%s)) } })" tynm styparamseq tynm skey sty senc
+
+          | _ :: _ :: _ ->
+              let smain =
+                RecordMap.fold (fun key (oty, otree_encoder) acc ->
+                  let skey = CommonConstant.key_for_json key in
+                  let sty = stringify_type oty in
+                  let senc = stringify_tree otree_encoder in
+                  let s = Printf.sprintf "(JsPath \\ \"%s\").write[%s](%s)" skey sty senc in
+                  Alist.extend acc s
+                ) entries Alist.empty |> Alist.to_list |> String.concat " and "
+              in
+              Printf.sprintf "(%s)(unlift(%s.unapply%s))" smain tynm styparamseq
+        end
 
     | VariantReads{ type_name = TypeIdentifier(_tynm); constructors = ctors; } ->
         let scases =
@@ -370,7 +396,7 @@ end = struct
             let s =
               match otreeopt with
               | None ->
-                  Printf.sprintf "case \"%s\" => Reads.pure(%s)" jctor sctor
+                  Printf.sprintf "case \"%s\" => Reads.pure(%s())" jctor sctor
 
               | Some(oty, otree_decoder) ->
                   let sty = stringify_type oty in
@@ -709,6 +735,30 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "  def intWrites() = IntWrites\n";        (* TODO; make this less ad-hoc *)
       "  def stringReads() = StringReads\n";    (* TODO; make this less ad-hoc *)
       "  def stringWrites() = StringWrites\n";  (* TODO; make this less ad-hoc *)
+      "  def listReads[A](r: Reads[A]): Reads[List[A]] = Reads.list(r)\n";
+      "  def listWrites[A](w: Writes[A]): Writes[List[A]] = Writes.list(w)\n";
+      "  def optionReads[A](r: Reads[A]): Reads[Option[A]] =\n";
+      Printf.sprintf
+      "    (JsPath \\ \"%s\").read[String].flatMap { (label: String) =>\n"
+      CommonConstant.label_field;
+      "      label match {\n";
+      "        case \"None\" => Reads.pure(None)\n";
+      Printf.sprintf
+      "        case \"Some\" => (JsPath \\ \"%s\").read[A](r).flatMap { (x) => Reads.pure(Some(x)) }\n"
+      CommonConstant.arg_field;
+      "      }\n";
+      "    }\n";
+      "  def optionWrites[A](w: Writes[A]): Writes[Option[A]] =\n";
+      "    Writes.apply { (x: Option[A]) =>\n";
+      "      x match {\n";
+      Printf.sprintf
+      "        case None => Json.obj(\"%s\" -> JsString(\"None\"))\n"
+      CommonConstant.label_field;
+      Printf.sprintf
+      "        case Some(arg) => Json.obj(\"%s\" -> JsString(\"Some\"), \"%s\" -> Json.toJson(arg)(w))\n"
+      CommonConstant.label_field CommonConstant.arg_field;
+      "      }\n";
+      "    }\n";
       "\n";
     ];
     sdecls;
