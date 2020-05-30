@@ -407,7 +407,7 @@ end = struct
 
           ) ctors Alist.empty |> Alist.to_list |> String.concat " "
         in
-        Printf.sprintf "(JsPath \\ \"%s\").read[String].flatMap { (label: String) => label match { %s }}" CommonConstant.label_field scases
+        Printf.sprintf "(JsPath \\ \"%s\").read[String](StringReads).flatMap { (label: String) => label match { %s }}" CommonConstant.label_field scases
 
     | VariantWrites{
         type_name    = TypeIdentifier(tynm);
