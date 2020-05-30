@@ -1,5 +1,6 @@
 (executable
-  (name main)
+  (name apbuf)
+  (public_name apbuf)
   (libraries cmdliner menhirLib)
   (preprocess
     (pps ppx_deriving.show)))
