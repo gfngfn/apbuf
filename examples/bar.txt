@@ -2,7 +2,11 @@
   dir    = "./gen/elm/src",
   module = "Bar",
 }
-@output "scala": { dir = "./gen/play-scala-seed/app/assets/apbuf" }
+@output "scala": {
+  dir     = "./gen/play-scala-seed/app/assets/apbuf",
+  package = "apbufgen",
+  object  = "Bar",
+}
 
 geometry :=
   | Rectangle : rectangle_info(int)

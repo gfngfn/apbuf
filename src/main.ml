@@ -87,10 +87,10 @@ let generate_elm (dir_in : string) (rdict : dictionary) (decls : declarations) :
 let generate_scala (dir_in : string) (rdict : dictionary) (decls : declarations) : (unit, error) result =
   let open ResultMonad in
   get_dir_out dir_in rdict >>= fun dir_out ->
-  let module_name = "APBufGen" in
-  let package_name = "apbufgen" in
-  let s = GenScala.generate module_name package_name decls in
-  let path_out = Filename.concat dir_out (module_name ^ ".scala") in
+  get_mandatory_string rdict "package" >>= fun package_name ->
+  get_mandatory_string rdict "object" >>= fun object_name ->
+  let s = GenScala.generate object_name package_name decls in
+  let path_out = Filename.concat dir_out (object_name ^ ".scala") in
   Format.printf "writing output on '%s' ...\n" path_out;
   let fout = open_out path_out in
   output_string fout s;
