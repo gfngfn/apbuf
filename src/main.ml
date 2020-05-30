@@ -49,12 +49,40 @@ let generate_scala (dir_out : string) (decls : declarations) : unit =
   print_endline "done."
 
 
+let validate_dictionary ((rngd, pfields) : parsed_dictionary) : (dictionary, error) result =
+  let open ResultMonad in
+  pfields |> List.fold_left (fun res ((_, k), rv) ->
+    res >>= fun dict ->
+    if dict |> Dict.mem k then
+      error (KeySpecifiedMoreThanOnce{ range = rngd; key = k; })
+    else
+      return (dict |> Dict.add k rv)
+  ) (return Dict.empty) >>= fun dict ->
+  return (rngd, dict)
+
+
+let get_mandatory_value ((rngd, dict) : dictionary) key : (meta_value ranged, error) result =
+  let open ResultMonad in
+  match dict |> Dict.find_opt key with
+  | None     -> error (MandatoryKeyNotFound{ range = rngd; key = key; })
+  | Some(rv) -> return rv
+
+
+let validate_string_value (_rng, mv) : (string, error) result =
+  let open ResultMonad in
+  match mv with
+  | VString(s) -> return s
+
+
 let output_loop dir_in (metas : meta_spec list) (decls : declarations) =
   let open ResultMonad in
   metas |> List.fold_left (fun prev meta ->
     prev >>= fun () ->
     match meta with
-    | MetaOutput((_, "elm"), (_, dir)) ->
+    | MetaOutput((_, "elm"), pdict) ->
+        validate_dictionary pdict >>= fun rdict ->
+        get_mandatory_value rdict "dir" >>= fun rmv ->
+        validate_string_value rmv >>= fun dir ->
         validate_declarations decls >>= fun () ->
         let dir_out =
           if Filename.is_relative dir then
@@ -65,7 +93,10 @@ let output_loop dir_in (metas : meta_spec list) (decls : declarations) =
         generate_elm dir_out decls;
         return ()
 
-    | MetaOutput((_, "scala"), (_, dir)) ->
+    | MetaOutput((_, "scala"), pdict) ->
+        validate_dictionary pdict >>= fun rdict ->
+        get_mandatory_value rdict "dir" >>= fun rmv ->
+        validate_string_value rmv >>= fun dir ->
         validate_declarations decls >>= fun () ->
         let dir_out =
           if Filename.is_relative dir then

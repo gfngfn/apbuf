@@ -3,7 +3,7 @@
 %}
 
 %token EOI
-%token<Range.t> DEFEQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
+%token<Range.t> DEFEQ EQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
 %token<Range.t> META_OUTPUT
 %token<Range.t * Types.parsed_variable> VARIABLE
 %token<Range.t * string> LOWER
@@ -15,6 +15,7 @@
 %type<Types.top_level> toplevel
 %type<(Range.t * Types.parsed_variable) list> params
 %type<Types.parsed_message list> argssub
+%type<Types.meta_spec> meta
 
 %%
 
@@ -22,7 +23,22 @@ toplevel:
 | metas=list(meta); decls=list(msgdecl); EOI { (metas, decls) }
 ;
 meta:
-| META_OUTPUT; s=STRING; COLON; path=STRING { MetaOutput(s, path) }
+| META_OUTPUT; s=STRING; COLON; dict=dict { MetaOutput(s, dict) }
+;
+dict:
+| posL=BRECORD; fields=list(field); posR=ERECORD {
+    let rng = Range.unite posL posR in
+    (rng, fields)
+  }
+;
+field:
+| key=LOWER; EQ; v=value { (key, v) }
+;
+value:
+| tok=STRING {
+    let (rng, s) = tok in
+    (rng, VString(s))
+  }
 ;
 msgdecl:
 | name=msgname; params=params; DEFEQ; msg=msg {
