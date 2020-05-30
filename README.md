@@ -19,8 +19,15 @@ In exchange for its clean representation, APBuf at least currently does not purs
 The following configuration file:
 
 ```
-@output "elm": "./elm/src"
-@output "scala": "./scala_play/app/controllers"
+@output "elm": {
+  dir    = "./gen/elm/src",
+  module = "Bar",
+}
+@output "scala": {
+  dir     = "./gen/play-scala-seed/app/assets/apbuf",
+  package = "apbufgen",
+  object  = "Bar",
+}
 
 geometry :=
   | Rectangle : rectangle_info(int)
@@ -44,7 +51,7 @@ rational := { numerator : int, denominator : int }
 produces Elm code that has the following API:
 
 ```elm
-module APBufGen exposing (..)
+module Bar exposing (..)
 import Json.Decode exposing (Decoder)
 import Json.Encode exposing (Value)
 
@@ -78,7 +85,7 @@ package apbufgen
 
 import play.api.libs.json._
 
-object APBufGen {
+object Bar {
   sealed trait Geometry
   case class Rectangle(arg: RectangleInfo[Int]) extends Geometry
   case class Circle(arg: CircleInfo[Int, Rational]) extends Geometry
