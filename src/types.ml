@@ -133,8 +133,18 @@ type parsed_definition = {
 
 type parsed_declarations = (parsed_name ranged * parsed_definition) list
 
+type meta_value =
+  | VString of string
+
+type parsed_dictionary =
+  ((string ranged * meta_value ranged) list) ranged
+
 type meta_spec =
-  | MetaOutput of string ranged * string ranged
+  | MetaOutput of string ranged * parsed_dictionary
+
+module Dict = Map.Make(String)
+
+type dictionary = ((meta_value ranged) Dict.t) ranged
 
 type top_level = meta_spec list * parsed_declarations
 
@@ -187,7 +197,10 @@ type declarations = definition DeclMap.t
 type error =
   | LexingInvalidCharacter         of { character : char; range : Range.t; }
   | EndOfLineInsideStringLiteral   of { start : Range.t; }
+  | UnknownMeta                    of string
+  | MandatoryKeyNotFound           of { range : Range.t; key : string; }
   | ParseErrorDetected             of { range : Range.t; }
+  | KeySpecifiedMoreThanOnce       of { range : Range.t; key : string; }
   | MalformedName                  of { raw : string; range : Range.t; }
   | MalformedVariable              of { raw : string; range : Range.t; }
   | MalformedKey                   of { raw : string; range : Range.t; }

@@ -22,6 +22,7 @@ rule token = parse
 | space { token lexbuf }
 | break { Lexing.new_line lexbuf; token lexbuf }
 | ":=" { DEFEQ(get_pos lexbuf) }
+| "=" { EQ(get_pos lexbuf) }
 | "|" { BAR(get_pos lexbuf) }
 | "{" { BRECORD(get_pos lexbuf) }
 | "}" { ERECORD(get_pos lexbuf) }
@@ -32,7 +33,7 @@ rule token = parse
 | ("@" (lower as s)) {
     match s with
     | "output" -> META_OUTPUT(get_pos lexbuf)
-    | _        -> failwith "error at lexer (1)"
+    | _        -> fail (UnknownMeta(s))
   }
 | ("$" (lower as x)) { VARIABLE(get_pos lexbuf, x) }
 | "\"" { string (get_pos lexbuf) (Buffer.create 256) lexbuf }

@@ -26,27 +26,77 @@ let pp decls s =
   Format.printf "OUTPUT:@ @[%s@]" s
 
 
-let generate_elm (dir_out : string) (decls : declarations) : unit =
-  let module_name = "APBufGen" in
+let validate_dictionary ((rngd, pfields) : parsed_dictionary) : (dictionary, error) result =
+  let open ResultMonad in
+  pfields |> List.fold_left (fun res ((_, k), rv) ->
+    res >>= fun dict ->
+    if dict |> Dict.mem k then
+      error (KeySpecifiedMoreThanOnce{ range = rngd; key = k; })
+    else
+      return (dict |> Dict.add k rv)
+  ) (return Dict.empty) >>= fun dict ->
+  return (rngd, dict)
+
+
+let get_mandatory_value ((rngd, dict) : dictionary) key : (meta_value ranged, error) result =
+  let open ResultMonad in
+  match dict |> Dict.find_opt key with
+  | None     -> error (MandatoryKeyNotFound{ range = rngd; key = key; })
+  | Some(rv) -> return rv
+
+
+let validate_string_value (_rng, mv) : (string, error) result =
+  let open ResultMonad in
+  match mv with
+  | VString(s) -> return s
+
+
+let get_mandatory_string rdict key =
+  let open ResultMonad in
+  get_mandatory_value rdict key >>= fun rmv ->
+  validate_string_value rmv
+
+
+let get_dir_out (dir_in : string) (rdict : dictionary) : (string, error) result =
+  let open ResultMonad in
+  get_mandatory_value rdict "dir" >>= fun rmv ->
+  validate_string_value rmv >>= fun dir ->
+  let dir_out =
+    if Filename.is_relative dir then
+      Filename.concat dir_in dir
+    else
+      dir
+  in
+  return dir_out
+
+
+let generate_elm (dir_in : string) (rdict : dictionary) (decls : declarations) : (unit, error) result =
+  let open ResultMonad in
+  get_dir_out dir_in rdict >>= fun dir_out ->
+  get_mandatory_string rdict "module" >>= fun module_name ->
   let s = GenElm.generate module_name decls in
   let path_out = Filename.concat dir_out (module_name ^ ".elm") in
   Format.printf "writing output on '%s' ...\n" path_out;
   let fout = open_out path_out in
   output_string fout s;
   close_out fout;
-  print_endline "done."
+  print_endline "done.";
+  return ()
 
 
-let generate_scala (dir_out : string) (decls : declarations) : unit =
-  let module_name = "APBufGen" in
-  let package_name = "apbufgen" in
-  let s = GenScala.generate module_name package_name decls in
-  let path_out = Filename.concat dir_out (module_name ^ ".scala") in
+let generate_scala (dir_in : string) (rdict : dictionary) (decls : declarations) : (unit, error) result =
+  let open ResultMonad in
+  get_dir_out dir_in rdict >>= fun dir_out ->
+  get_mandatory_string rdict "package" >>= fun package_name ->
+  get_mandatory_string rdict "object" >>= fun object_name ->
+  let s = GenScala.generate object_name package_name decls in
+  let path_out = Filename.concat dir_out (object_name ^ ".scala") in
   Format.printf "writing output on '%s' ...\n" path_out;
   let fout = open_out path_out in
   output_string fout s;
   close_out fout;
-  print_endline "done."
+  print_endline "done.";
+  return ()
 
 
 let output_loop dir_in (metas : meta_spec list) (decls : declarations) =
@@ -54,27 +104,15 @@ let output_loop dir_in (metas : meta_spec list) (decls : declarations) =
   metas |> List.fold_left (fun prev meta ->
     prev >>= fun () ->
     match meta with
-    | MetaOutput((_, "elm"), (_, dir)) ->
+    | MetaOutput((_, "elm"), pdict) ->
+        validate_dictionary pdict >>= fun rdict ->
         validate_declarations decls >>= fun () ->
-        let dir_out =
-          if Filename.is_relative dir then
-            Filename.concat dir_in dir
-          else
-            dir
-        in
-        generate_elm dir_out decls;
-        return ()
+        generate_elm dir_in rdict decls
 
-    | MetaOutput((_, "scala"), (_, dir)) ->
+    | MetaOutput((_, "scala"), pdict) ->
+        validate_dictionary pdict >>= fun rdict ->
         validate_declarations decls >>= fun () ->
-        let dir_out =
-          if Filename.is_relative dir then
-            Filename.concat dir_in dir
-          else
-            dir
-        in
-        generate_scala dir_out decls;
-        return ()
+        generate_scala dir_in rdict decls
 
     | MetaOutput((_, other), _) ->
         error (UnsupportedTarget{ target = other; })
@@ -103,7 +141,8 @@ let main path_in =
       print_endline "finished."
 
   | Error(e) ->
-      Format.printf "! Error:@ %a" pp_error e
+      Format.printf "! Error:@ %a" pp_error e;
+      exit 1
 
 
 (** The spec for the anonimous argument that points to an input. *)
