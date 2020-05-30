@@ -739,7 +739,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "  def listWrites[A](w: Writes[A]): Writes[List[A]] = Writes.list(w)\n";
       "  def optionReads[A](r: Reads[A]): Reads[Option[A]] =\n";
       Printf.sprintf
-      "    (JsPath \\ \"%s\").read[String].flatMap { (label: String) =>\n"
+      "    (JsPath \\ \"%s\").read[String](StringReads).flatMap { (label: String) =>\n"
       CommonConstant.label_field;
       "      label match {\n";
       "        case \"None\" => Reads.pure(None)\n";
