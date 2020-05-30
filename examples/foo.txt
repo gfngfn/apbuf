@@ -1,21 +1,31 @@
-@output "elm": "./gen"
-
-bib_type($s) :=
-  | Article: article
-  | InProceedings: {
-      conference: string,
-    }
-  | NoBib
-  | Special: $s
-
-bib($x) := {
-  title: string,
-  author: list($x),
-  bib_type: bib_type(bool),
+@output "elm": {
+  dir    = "./gen/elm/src",
+  module = "Foo",
+}
+@output "scala": {
+  dir     = "./gen/play-scala-seed/app/assets/apbuf",
+  object  = "Foo",
+  package = "apbufgen",
 }
 
-article := {
-  book_title: string,
-  volume: int,
-  number: option(int),
+bib_type($s) :=
+  | Article       : article_info
+  | InProceedings : inproceedings_info
+  | NoBib
+  | Special       : $s
+
+bib($x) := {
+  title    : string,
+  author   : list($x),
+  bib_type : bib_type(bool),
+}
+
+article_info := {
+  book_title : string,
+  volume     : int,
+  number     : option(int),
+}
+
+inproceedings_info := {
+  conference: string,
 }

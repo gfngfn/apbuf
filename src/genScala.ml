@@ -709,6 +709,17 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "  def intWrites() = IntWrites\n";        (* TODO; make this less ad-hoc *)
       "  def stringReads() = StringReads\n";    (* TODO; make this less ad-hoc *)
       "  def stringWrites() = StringWrites\n";  (* TODO; make this less ad-hoc *)
+      "  def optionReads[A](r: Reads[A]): Reads[Option[A]] =\n";
+      Printf.sprintf
+      "    (JsPath \\ \"%s\").read[String].flatMap { (label: String) =>\n"
+      CommonConstant.label_field;
+      "      label match {\n";
+      "        case \"None\" => Reads.pure(None)\n";
+      Printf.sprintf
+      "        case \"Some\" => (JsPath \\ \"%s\").read[A](r).flatMap { (x) => Reads.pure(Some(x)) }\n"
+      CommonConstant.arg_field;
+      "      }\n";
+      "    }\n";
       "\n";
     ];
     sdecls;
