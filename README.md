@@ -101,8 +101,8 @@ object Bar {
   def circleInfoWrites[Cnum, Rnum](Writes[Cnum], Writes[Rnum]): Writes[CircleInfo[Cnum, Rnum]]
 
   case class Position[Num](x: Num, y: Num)
-  def positionReads[Num](Reads[Num]): Reads[Position[num]]
-  def positionWrites[Num](Writes[Num]): Writes[Position[num]]
+  def positionReads[Num](Reads[Num]): Reads[Position[Num]]
+  def positionWrites[Num](Writes[Num]): Writes[Position[Num]]
 
   case class Rational(denominator: Int, numerator: Int)
   def rationalReads(): Reads[Rational]
