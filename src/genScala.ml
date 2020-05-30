@@ -325,21 +325,34 @@ end = struct
         type_params = otyparams;
         entries     = entries;
       } ->
-        let styparamseq =
-          match otyparams with
-          | []     -> ""
-          | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
-        in
-        let smain =
-          RecordMap.fold (fun key (oty, otree_decoder) acc ->
-            let skey = CommonConstant.key_for_json key in
-            let sty = stringify_type oty in
-            let sdec = stringify_tree otree_decoder in
-            let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
-            Alist.extend acc s
-          ) entries Alist.empty |> Alist.to_list |> String.concat " and "
-        in
-        Printf.sprintf "(%s)(%s.apply%s _)" smain tynm styparamseq
+        begin
+          match RecordMap.bindings entries with
+          | [] ->
+              assert false
+
+          | (key, (oty, otree_decoder)) :: [] ->
+              let skey = CommonConstant.key_for_json key in
+              let sty = stringify_type oty in
+              let sdec = stringify_tree otree_decoder in
+              Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s).flatMap { (x: %s) => Reads.pure(%s(x)) }" skey sty sdec sty tynm
+
+          | _ :: _ ->
+              let styparamseq =
+                match otyparams with
+                | []     -> ""
+                | _ :: _ -> "[" ^ (otyparams |> List.map (function TypeParameter(a) -> a) |> String.concat ", ") ^ "]"
+              in
+              let smain =
+                RecordMap.fold (fun key (oty, otree_decoder) acc ->
+                  let skey = CommonConstant.key_for_json key in
+                  let sty = stringify_type oty in
+                  let sdec = stringify_tree otree_decoder in
+                  let s = Printf.sprintf "(JsPath \\ \"%s\").read[%s](%s)" skey sty sdec in
+                  Alist.extend acc s
+                ) entries Alist.empty |> Alist.to_list |> String.concat " and "
+              in
+              Printf.sprintf "(%s)(%s.apply%s _)" smain tynm styparamseq
+        end
 
     | RecordWrites{
         type_name   = TypeIdentifier(tynm);

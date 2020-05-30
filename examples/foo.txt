@@ -27,6 +27,5 @@ article_info := {
 }
 
 inproceedings_info := {
-  conference: string,
-  dummy     : int,
+  conference : string,
 }
