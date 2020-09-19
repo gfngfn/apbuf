@@ -1014,7 +1014,7 @@ let generate (module_name : string) (decls : declarations) : (string, error) res
                     in
                     let odecl_encoder =
                       let tyannot = make_encoder_function_type [] tyaliasmsg in
-                      Output.define_value_by_text ovar_decoder tyannot encoder_text
+                      Output.define_value_by_text ovar_encoder tyannot encoder_text
                     in
                     let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
                     return acc
