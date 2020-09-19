@@ -107,6 +107,7 @@ type parsed_constructor = string
 
 type meta_value =
   | VString of string
+  | VList   of (meta_value ranged) list
 
 type parsed_dictionary =
   ((string ranged * meta_value ranged) list) ranged
@@ -240,6 +241,8 @@ type error =
   | ExternalDefinedMoreThanOnce    of { key : string; range : Range.t; }
   | NoExternal                     of { format : string; name : Name.t; }
   | NoParameterAllowedForExternal
+  | NotAStringValue                of Range.t
+  | NotAListValue                  of Range.t
 [@@deriving show { with_path = false; }]
 
 module ResultMonad : sig
@@ -533,20 +536,37 @@ let built_in_declarations : parsed_declarations =
   ]
 
 
-let get_mandatory_value ((rngd, dict) : dictionary) key : (meta_value ranged, error) result =
+let get_mandatory_value ((rngd, dict) : dictionary) (key : string) : (meta_value ranged, error) result =
   let open ResultMonad in
   match dict |> Dict.find_opt key with
   | None     -> error (MandatoryKeyNotFound{ range = rngd; key = key; })
   | Some(rv) -> return rv
 
 
-let validate_string_value (_rng, mv) : (string, error) result =
+let validate_string_value ((rng, mv) : meta_value ranged) : (string, error) result =
   let open ResultMonad in
   match mv with
   | VString(s) -> return s
+  | _          -> error (NotAStringValue(rng))
 
 
-let get_mandatory_string rdict key =
+let get_mandatory_string (rdict : dictionary) (key : string) : (string, error) result =
   let open ResultMonad in
   get_mandatory_value rdict key >>= fun rmv ->
   validate_string_value rmv
+
+
+let get_mandatory_list validatef (rdict : dictionary) (key : string) =
+  let open ResultMonad in
+  get_mandatory_value rdict key >>= fun (rng, mv) ->
+  match mv with
+  | VList(rmvs) ->
+      rmvs |> List.fold_left (fun res rmv ->
+        res >>= fun acc ->
+        validatef rmv >>= fun v ->
+        return (Alist.extend acc v)
+      ) (return Alist.empty) >>= fun acc ->
+      return (acc |> Alist.to_list)
+
+  | _ ->
+      error (NotAListValue(rng))
