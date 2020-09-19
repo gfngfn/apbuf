@@ -34,6 +34,7 @@ rule token = parse
     match s with
     | "output"           -> META_OUTPUT(get_pos lexbuf)
     | "language_version" -> META_LANGUAGE_VERSION(get_pos lexbuf)
+    | "external"         -> META_EXTERNAL(get_pos lexbuf)
     | _                  -> fail (UnknownMeta(s))
   }
 | ("$" (lower as x)) { VARIABLE(get_pos lexbuf, x) }
