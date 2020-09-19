@@ -39,6 +39,7 @@ rule token = parse
   }
 | ("$" (lower as x)) { VARIABLE(get_pos lexbuf, x) }
 | "\"" { string (get_pos lexbuf) (Buffer.create 256) lexbuf }
+| "/*" { comment (get_pos lexbuf) lexbuf; token lexbuf }
 | lower { LOWER(get_pos lexbuf, Lexing.lexeme lexbuf) }
 | upper { UPPER(get_pos lexbuf, Lexing.lexeme lexbuf) }
 | eof { EOI }
@@ -61,3 +62,8 @@ and string start buf = parse
 | (eof | '\r' | '\n') {
     fail (EndOfLineInsideStringLiteral{ start = start; })
   }
+
+and comment start = parse
+| "*/" { () }
+| eof  { fail (EndOfLineInsideComment{ start = start; }) }
+| _    { comment start lexbuf }

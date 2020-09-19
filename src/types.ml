@@ -215,6 +215,7 @@ type error =
   | IncompatibleVersion            of { providing : version; got : version }
   | LexingInvalidCharacter         of { character : char; range : Range.t; }
   | EndOfLineInsideStringLiteral   of { start : Range.t; }
+  | EndOfLineInsideComment         of { start : Range.t; }
   | UnknownMeta                    of string
   | MandatoryKeyNotFound           of { range : Range.t; key : string; }
   | ParseErrorDetected             of { range : Range.t; }
