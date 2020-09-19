@@ -894,148 +894,148 @@ and generate_message_encoder (msg : message) : Output.tree =
 
 let generate (module_name : string) (decls : declarations) : (string, error) result =
   let open ResultMonad in
-    DeclMap.fold (fun name def res ->
-      res >>= fun acc ->
-      let ovar_decoder = Output.global_decoder name in
-      let ovar_encoder = Output.global_encoder name in
-      let oparams = def.def_params |> List.map (fun (_, x) -> Output.local_for_parameter x) in
-      match def.def_main with
-      | BuiltIn(builtin) ->
-          let odecl_decoder = Output.built_in_decoder builtin in
-          let odecl_encoder = Output.built_in_encoder builtin in
-          let acc = Alist.append acc [ odecl_decoder; odecl_encoder; ] in
-          return acc
+  DeclMap.fold (fun name def res ->
+    res >>= fun acc ->
+    let ovar_decoder = Output.global_decoder name in
+    let ovar_encoder = Output.global_encoder name in
+    let oparams = def.def_params |> List.map (fun (_, x) -> Output.local_for_parameter x) in
+    match def.def_main with
+    | BuiltIn(builtin) ->
+        let odecl_decoder = Output.built_in_decoder builtin in
+        let odecl_encoder = Output.built_in_encoder builtin in
+        let acc = Alist.append acc [ odecl_decoder; odecl_encoder; ] in
+        return acc
 
-      | GivenNormal(msg) ->
-          let otyname = Output.type_identifier name in
-          let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
-          let odecl_type =
-            Output.define_type_alias otyname otyparam (generate_message_type msg)
-          in
-          let tyaliasmsg =
-            let tyargs = otyparam |> List.map Output.type_variable in
-            Output.type_name otyname tyargs
-          in
-          let odecl_decoder =
-            let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
-            let otree = generate_message_decoder msg in
-            Output.define_value ovar_decoder tyannot oparams otree
-          in
-          let odecl_encoder =
-            let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
-            let otree_encoder = generate_message_encoder msg in
-            Output.define_value ovar_encoder tyannot oparams otree_encoder
-          in
-          let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-          return acc
+    | GivenNormal(msg) ->
+        let otyname = Output.type_identifier name in
+        let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+        let odecl_type =
+          Output.define_type_alias otyname otyparam (generate_message_type msg)
+        in
+        let tyaliasmsg =
+          let tyargs = otyparam |> List.map Output.type_variable in
+          Output.type_name otyname tyargs
+        in
+        let odecl_decoder =
+          let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
+          let otree = generate_message_decoder msg in
+          Output.define_value ovar_decoder tyannot oparams otree
+        in
+        let odecl_encoder =
+          let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
+          let otree_encoder = generate_message_encoder msg in
+          Output.define_value ovar_encoder tyannot oparams otree_encoder
+        in
+        let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
+        return acc
 
-      | GivenRecord(record) ->
-          let otyname = Output.type_identifier name in
-          let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
-          let odecl_type =
-            Output.define_type_alias otyname otyparam (generate_record_type record)
-          in
-          let tyaliasmsg =
-            let tyargs = otyparam |> List.map Output.type_variable in
-            Output.type_name otyname tyargs
-          in
-          let odecl_decoder =
-            let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
-            let otree = decoder_of_record record in
-            Output.define_value ovar_decoder tyannot oparams otree
-          in
-          let odecl_encoder =
-            let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
-            let otree_encoder = encoder_of_record record in
-            Output.define_value ovar_encoder tyannot oparams otree_encoder
-          in
-          let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-          return acc
+    | GivenRecord(record) ->
+        let otyname = Output.type_identifier name in
+        let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+        let odecl_type =
+          Output.define_type_alias otyname otyparam (generate_record_type record)
+        in
+        let tyaliasmsg =
+          let tyargs = otyparam |> List.map Output.type_variable in
+          Output.type_name otyname tyargs
+        in
+        let odecl_decoder =
+          let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
+          let otree = decoder_of_record record in
+          Output.define_value ovar_decoder tyannot oparams otree
+        in
+        let odecl_encoder =
+          let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
+          let otree_encoder = encoder_of_record record in
+          Output.define_value ovar_encoder tyannot oparams otree_encoder
+        in
+        let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
+        return acc
 
-      | GivenVariant(variant) ->
-          let otyname = Output.type_identifier name in
-          let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
-          let odecl_type =
-            let otymain =
-              VariantMap.fold (fun ctor argmsgopt acc ->
-                let oargtyopt =
-                  match argmsgopt with
-                  | None         -> None
-                  | Some(argmsg) -> Some(generate_message_type argmsg)
-                in
-                Alist.extend acc (ctor, oargtyopt)
-              ) variant Alist.empty |> Alist.to_list
-            in
-            Output.define_data_type otyname otyparam otymain
+    | GivenVariant(variant) ->
+        let otyname = Output.type_identifier name in
+        let otyparam = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+        let odecl_type =
+          let otymain =
+            VariantMap.fold (fun ctor argmsgopt acc ->
+              let oargtyopt =
+                match argmsgopt with
+                | None         -> None
+                | Some(argmsg) -> Some(generate_message_type argmsg)
+              in
+              Alist.extend acc (ctor, oargtyopt)
+            ) variant Alist.empty |> Alist.to_list
           in
-          let tyaliasmsg =
-            let tyargs = otyparam |> List.map Output.type_variable in
-            Output.type_name otyname tyargs
-          in
-          let odecl_decoder =
-            let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
-            let otree = decoder_of_variant variant in
-            Output.define_value ovar_decoder tyannot oparams otree
-          in
-          let odecl_encoder =
-            let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
-            let otree = encoder_of_variant variant in
-            Output.define_value ovar_encoder tyannot oparams otree
-          in
-          let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-          return acc
+          Output.define_data_type otyname otyparam otymain
+        in
+        let tyaliasmsg =
+          let tyargs = otyparam |> List.map Output.type_variable in
+          Output.type_name otyname tyargs
+        in
+        let odecl_decoder =
+          let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
+          let otree = decoder_of_variant variant in
+          Output.define_value ovar_decoder tyannot oparams otree
+        in
+        let odecl_encoder =
+          let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
+          let otree = encoder_of_variant variant in
+          Output.define_value ovar_encoder tyannot oparams otree
+        in
+        let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
+        return acc
 
-      | GivenExternal(extern) ->
-          begin
-            match extern |> ExternalMap.find_opt "elm" with
-            | None ->
-                error (NoExternal{ format = "elm"; name = name })
+    | GivenExternal(extern) ->
+        begin
+          match extern |> ExternalMap.find_opt "elm" with
+          | None ->
+              error (NoExternal{ format = "elm"; name = name })
 
-            | Some(dict) ->
-                begin
-                  match def.def_params with
-                  | _ :: _ ->
-                      error NoParameterAllowedForExternal
+          | Some(dict) ->
+              begin
+                match def.def_params with
+                | _ :: _ ->
+                    error NoParameterAllowedForExternal
 
-                  | [] ->
-                      get_mandatory_string dict "type" >>= fun type_text ->
-                      get_mandatory_string dict "decoder" >>= fun decoder_text ->
-                      get_mandatory_string dict "encoder" >>= fun encoder_text ->
-                      let otyname = Output.type_identifier name in
-                      let odecl_type =
-                        Output.define_type_by_text otyname type_text
-                      in
-                      let tyaliasmsg =
-                        Output.type_name otyname []
-                      in
-                      let odecl_decoder =
-                        let tyannot = make_decoder_function_type [] tyaliasmsg in
-                        Output.define_value_by_text ovar_decoder tyannot decoder_text
-                      in
-                      let odecl_encoder =
-                        let tyannot = make_encoder_function_type [] tyaliasmsg in
-                        Output.define_value_by_text ovar_decoder tyannot encoder_text
-                      in
-                      let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-                      return acc
-                end
-          end
+                | [] ->
+                    get_mandatory_string dict "type" >>= fun type_text ->
+                    get_mandatory_string dict "decoder" >>= fun decoder_text ->
+                    get_mandatory_string dict "encoder" >>= fun encoder_text ->
+                    let otyname = Output.type_identifier name in
+                    let odecl_type =
+                      Output.define_type_by_text otyname type_text
+                    in
+                    let tyaliasmsg =
+                      Output.type_name otyname []
+                    in
+                    let odecl_decoder =
+                      let tyannot = make_decoder_function_type [] tyaliasmsg in
+                      Output.define_value_by_text ovar_decoder tyannot decoder_text
+                    in
+                    let odecl_encoder =
+                      let tyannot = make_encoder_function_type [] tyaliasmsg in
+                      Output.define_value_by_text ovar_decoder tyannot encoder_text
+                    in
+                    let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
+                    return acc
+              end
+        end
 
-    ) decls (return Alist.empty) >>= fun acc ->
-    let odecls = acc |> Alist.to_list in
-    let sdecls =
-      odecls |> List.map (fun odecl ->
-        Output.stringify_declaration odecl ^ "\n\n"
-      )
-    in
-    let (n1, n2, n3) = language_version in
-    let s =
-      List.append [
-        Printf.sprintf "-- Auto-generated by APBuf %d.%d.%d\n" n1 n2 n3;
-        Printf.sprintf "module %s exposing (..)\n" module_name;
-        "import Json.Decode\n";
-        "import Json.Encode\n";
-        "\n";
-      ] sdecls |> String.concat ""
-    in
-    return s
+  ) decls (return Alist.empty) >>= fun acc ->
+  let odecls = acc |> Alist.to_list in
+  let sdecls =
+    odecls |> List.map (fun odecl ->
+      Output.stringify_declaration odecl ^ "\n\n"
+    )
+  in
+  let (n1, n2, n3) = language_version in
+  let s =
+    List.append [
+      Printf.sprintf "-- Auto-generated by APBuf %d.%d.%d\n" n1 n2 n3;
+      Printf.sprintf "module %s exposing (..)\n" module_name;
+      "import Json.Decode\n";
+      "import Json.Encode\n";
+      "\n";
+    ] sdecls |> String.concat ""
+  in
+  return s
