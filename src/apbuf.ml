@@ -3,9 +3,6 @@ open Cmdliner
 open Types
 
 
-let language_version = (0, 0, 1)
-
-
 let pp decls s =
   let pp_params ppf params =
     let xs = params |> List.map snd |> List.map Variable.to_snake_case in
