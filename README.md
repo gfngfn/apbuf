@@ -30,6 +30,7 @@ and then the executable file `apbuf` will be installed.
 The following configuration file:
 
 ```
+@language_version "0.0.1"
 @output "elm": {
   dir    = "./gen/elm/src",
   module = "Bar",
@@ -127,14 +128,18 @@ object Bar {
 ```
 stringlit ::= (a string literal enclosed by double quotation marks)
 ident ::= (a lowercased identifier)
-x ::= (a lowercased identifier with a preceding dollar sign)
+$x ::= (a lowercased identifier with a preceding dollar sign)
 
 toplevel ::=
   | metas decls
 
 metas ::=
-  | '@output' stringlit ':' dict metas
+  | meta metas
   | (empty)
+
+meta ::=
+  | '@language_version' stringlit
+  | '@output' stringlit ':' dict
 
 dict ::=
   | '{' fields '}'
@@ -147,45 +152,41 @@ fields ::=
 metaval ::=
   | stringlit
 
-// declarations
+// a list of declarations
 decls ::=
-  | ident ':=' msg decls
-  | ident '(' params ')' ':=' msg decls
-  | ident ':=' '{' record '}' decls
-  | ident '(' params ')' ':=' '{' record '}' decls
-  | ident ':=' variant decls
-  | ident '(' params ')' ':=' variant decls
+  | decl decls
   | (empty)
+
+// a declaration
+decl ::=
+  | binder ':=' msg
+  | binder ':=' '{' record '}'
+  | binder ':=' variant
+
+binder ::=
+  | ident
+  | ident '(' params ')'
 
 params ::=
-  | x paramtail
+  | $x ',' params
+  | $x ','
+  | $x
 
-paramtail ::=
-  | ',' x paramtail
-  | ','
-  | (empty)
-
-// a message format definition
 msg ::=
-  | x
+  | $x
   | ident
   | ident '(' args ')'
 
 args ::=
-  | msg argtail
+  | msg ',' args
+  | msg ','
+  | msg
 
-argtail ::=
-  | ',' msg argtail
-  | ','
-  | (empty)
-
-// record fields
 record ::=
   | ident ':' msg ',' record
   | ident ':' msg
   | (empty)
 
-// variant fields
 variant ::=
   | '|' ctor ':' msg variantsub
   | ctor ':' msg variantsub
