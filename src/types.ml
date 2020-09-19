@@ -105,6 +105,12 @@ type parsed_key = string
 type parsed_constructor = string
 [@@deriving show { with_path = false; }]
 
+type meta_value =
+  | VString of string
+
+type parsed_dictionary =
+  ((string ranged * meta_value ranged) list) ranged
+
 type parsed_message =
   | PVariable of parsed_variable ranged
   | PName     of string ranged * parsed_message list
@@ -115,6 +121,8 @@ type parsed_variant = (parsed_constructor ranged * parsed_message option) list
 
 type parsed_record = (parsed_key ranged * parsed_message) list
 [@@deriving show { with_path = false; }]
+
+type parsed_external = (string ranged * parsed_dictionary) list
 
 type built_in =
   | BBool
@@ -128,6 +136,7 @@ type parsed_definition_main =
   | PGivenNormal  of parsed_message
   | PGivenVariant of parsed_variant
   | PGivenRecord  of parsed_record
+  | PGivenExternal of parsed_external
 
 type parsed_definition = {
   pdef_params : (Range.t * parsed_variable) list;
@@ -135,12 +144,6 @@ type parsed_definition = {
 }
 
 type parsed_declarations = (parsed_name ranged * parsed_definition) list
-
-type meta_value =
-  | VString of string
-
-type parsed_dictionary =
-  ((string ranged * meta_value ranged) list) ranged
 
 type meta_spec =
   | MetaOutput          of string ranged * parsed_dictionary
@@ -183,6 +186,10 @@ type variant = (message option) VariantMap.t
 type record = message RecordMap.t
   [@printer (pp_record_map pp_message)]
 
+module ExternalMap = Map.Make(String)
+
+type extern = dictionary ExternalMap.t
+
 module DeclMap = Map.Make(Name)
 
 type definition_main =
@@ -190,6 +197,7 @@ type definition_main =
   | GivenNormal  of message
   | GivenVariant of variant
   | GivenRecord  of record
+  | GivenExternal of extern
 
 type definition = {
   def_params : (Range.t * Variable.t) list;
@@ -228,6 +236,9 @@ type error =
       actual_arity   : int;
       range          : Range.t;
     }
+  | ExternalDefinedMoreThanOnce    of { key : string; range : Range.t; }
+  | NoExternal                     of { format : string; name : Name.t; }
+  | NoParameterAllowedForExternal
 [@@deriving show { with_path = false; }]
 
 module ResultMonad : sig
@@ -298,6 +309,17 @@ let make_constructor ((rng, sctor) : string ranged) : (Constructor.t ranged, err
   | Some(ctor) -> return (rng, ctor)
 
 
+let normalize_dictionary ((rngd, pfields) : parsed_dictionary) : (dictionary, error) result =
+  let open ResultMonad in
+  pfields |> List.fold_left (fun res ((_, k), rv) ->
+    res >>= fun dict ->
+    if dict |> Dict.mem k then
+      error (KeySpecifiedMoreThanOnce{ range = rngd; key = k; })
+    else
+      return (dict |> Dict.add k rv)
+  ) (return Dict.empty) >>= fun dict ->
+  return (rngd, dict)
+
 
 let rec normalize_message (pmsg : parsed_message) : (message, error) result =
   let open ResultMonad in
@@ -348,6 +370,17 @@ let normalize_record (prcd : parsed_record) : (record, error) result =
   return rcdmap
 
 
+let normalize_external (pextern : parsed_external) : (extern, error) result =
+  let open ResultMonad in
+  pextern |> List.fold_left (fun res ((rng, format), pdict) ->
+    res >>= fun extmap ->
+    if extmap |> ExternalMap.mem format then
+      error (ExternalDefinedMoreThanOnce{ key = format; range = rng; })
+    else
+      normalize_dictionary pdict >>= fun dict ->
+      return (extmap |> ExternalMap.add format dict)
+  ) (return ExternalMap.empty)
+
 
 let normalize_declarations (pdecls : parsed_declarations) : (declarations, error) result =
   let open ResultMonad in
@@ -373,6 +406,11 @@ let normalize_declarations (pdecls : parsed_declarations) : (declarations, error
         | PGivenRecord(precord) ->
             normalize_record precord >>= fun record ->
             return (GivenRecord(record))
+
+        | PGivenExternal(pextern) ->
+            normalize_external pextern >>= fun extern ->
+            return (GivenExternal(extern))
+
       end >>= fun defmain ->
       pdef.pdef_params |> List.fold_left (fun res rlower ->
         res >>= fun paramacc ->
@@ -474,6 +512,9 @@ let validate_declarations (decls : declarations) : (unit, error) result =
     | GivenRecord(record) ->
         validate_record find_arity is_defined_variable record
 
+    | GivenExternal(_) ->
+        return ()
+
   ) decls (return ())
 
 
@@ -489,3 +530,22 @@ let built_in_declarations : parsed_declarations =
     !@ "option" ==> ([(Range.dummy "option", "v")], BOption("v"));
     !@ "list"   ==> ([(Range.dummy "list", "v")], BList("v"));
   ]
+
+
+let get_mandatory_value ((rngd, dict) : dictionary) key : (meta_value ranged, error) result =
+  let open ResultMonad in
+  match dict |> Dict.find_opt key with
+  | None     -> error (MandatoryKeyNotFound{ range = rngd; key = key; })
+  | Some(rv) -> return rv
+
+
+let validate_string_value (_rng, mv) : (string, error) result =
+  let open ResultMonad in
+  match mv with
+  | VString(s) -> return s
+
+
+let get_mandatory_string rdict key =
+  let open ResultMonad in
+  get_mandatory_value rdict key >>= fun rmv ->
+  validate_string_value rmv

@@ -113,7 +113,9 @@ module Output : sig
   val define_variant_case_class : type_identifier -> type_parameter list -> (typ option) VariantMap.t -> declaration
   val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
+  val define_type_by_text : type_identifier -> string -> declaration
   val define_method : identifier -> type_parameter list -> (identifier * typ) list -> typ -> tree -> declaration
+  val define_method_by_text : identifier -> typ -> string -> declaration
   val stringify_declaration : declaration -> string
 end = struct
 
@@ -267,12 +269,21 @@ end = struct
         type_params : type_parameter list;
         type_real   : typ
       }
+    | DefTypeByText of {
+        type_name : type_identifier;
+        text      : string;
+      }
     | DefMethod of {
         method_name : identifier;
         type_params : type_parameter list;
         params      : (identifier * typ) list;
         return_type : typ;
         body        : tree;
+      }
+    | DefMethodByText of {
+        method_name : identifier;
+        return_type : typ;
+        text        : string;
       }
 
 
@@ -300,6 +311,13 @@ end = struct
     }
 
 
+  let define_type_by_text tyid text =
+    DefTypeByText{
+      type_name = tyid;
+      text      = text;
+    }
+
+
   let define_method ident otyparams vtparams otyret otree =
     DefMethod{
       method_name = ident;
@@ -307,6 +325,14 @@ end = struct
       return_type = otyret;
       params      = vtparams;
       body        = otree;
+    }
+
+
+  let define_method_by_text ident otyret text =
+    DefMethodByText{
+      method_name = ident;
+      return_type = otyret;
+      text        = text;
     }
 
 
@@ -505,6 +531,12 @@ end = struct
         let sty = stringify_type oty in
         Printf.sprintf "type %s%s = %s\n" tynm paramseq sty
 
+    | DefTypeByText{
+        type_name = TypeIdentifier(tynm);
+        text      = text;
+      } ->
+        Printf.sprintf "type %s = %s\n" tynm text
+
     | DefMethod{
         method_name = Var(varnm);
         type_params = otyparams;
@@ -527,6 +559,14 @@ end = struct
         let paramseq = String.concat ", " sparams in
         let sbody = stringify_tree otree in
         Printf.sprintf "def %s%s(%s): %s = { %s }\n" varnm typaramseq paramseq styret sbody
+
+    | DefMethodByText{
+        method_name = Var(varnm);
+        return_type = otyret;
+        text        = text;
+      } ->
+        let styret = stringify_type otyret in
+        Printf.sprintf "def %s(): %s = %s\n" varnm styret text
 
 end
 
@@ -604,11 +644,12 @@ let encoder_of_variant (tyid : Output.type_identifier) (otyparams : Output.type_
 
 
 let generate (module_name : string) (package_name : string) (decls : declarations) =
-  let odecls : Output.declaration list =
-    DeclMap.fold (fun name def acc ->
+  let open ResultMonad in
+    DeclMap.fold (fun name def res ->
+      res >>= fun acc ->
       match def.def_main with
       | BuiltIn(_builtin) ->
-          acc  (* TEMPORARY; TODO *)
+          return acc  (* TEMPORARY; TODO *)
 
       | GivenNormal(msg) ->
           let otyname = Output.type_identifier name in
@@ -642,7 +683,8 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             let otyret = Output.writes_type otymsg in
             Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
-          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
+          let acc = Alist.append acc [ odecl_type; odecl_reads; odecl_writes ] in
+          return acc
 
       | GivenRecord(record) ->
           let otyname = Output.type_identifier name in
@@ -676,7 +718,8 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             let otyret = Output.writes_type otymsg in
             Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
-          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
+          let acc = Alist.append acc [ odecl_type; odecl_reads; odecl_writes ] in
+          return acc
 
       | GivenVariant(variant) ->
           let otyname = Output.type_identifier name in
@@ -710,16 +753,56 @@ let generate (module_name : string) (package_name : string) (decls : declaration
             let otyret = Output.writes_type otymsg in
             Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
           in
-          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
+          let acc = Alist.append acc [ odecl_type; odecl_reads; odecl_writes ] in
+          return acc
 
-    ) decls Alist.empty |> Alist.to_list
-  in
-  let sdecls =
-    odecls |> List.map (fun odecl ->
-      "  " ^ Output.stringify_declaration odecl ^ "\n"
-    )
-  in
-  let (n1, n2, n3) = language_version in
+      | GivenExternal(extern) ->
+          begin
+            match extern |> ExternalMap.find_opt "scala" with
+            | None ->
+                error (NoExternal{ format = "scala"; name = name })
+
+            | Some(dict) ->
+                begin
+                  match def.def_params with
+                  | _ :: _ ->
+                      error NoParameterAllowedForExternal
+
+                  | [] ->
+                      get_mandatory_string dict "type" >>= fun type_text ->
+                      get_mandatory_string dict "decoder" >>= fun decoder_text ->
+                      get_mandatory_string dict "encoder" >>= fun encoder_text ->
+                      let otyname = Output.type_identifier name in
+                      let odecl_type =
+                        Output.define_type_by_text otyname type_text
+                      in
+                      let otymsg =
+                        Output.type_name otyname []
+                      in
+                      let odecl_decoder =
+                        let ovar_reads = Output.global_reads name in
+                        let tyannot = Output.reads_type otymsg in
+                        Output.define_method_by_text ovar_reads tyannot decoder_text
+                      in
+                      let odecl_encoder =
+                        let ovar_writes = Output.global_reads name in
+                        let tyannot = Output.writes_type otymsg in
+                        Output.define_method_by_text ovar_writes tyannot encoder_text
+                      in
+                      let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
+                      return acc
+                end
+          end
+
+    ) decls (return Alist.empty) >>= fun acc ->
+    let odecls = acc |> Alist.to_list in
+    let sdecls =
+      odecls |> List.map (fun odecl ->
+        "  " ^ Output.stringify_declaration odecl ^ "\n"
+      )
+    in
+    let (n1, n2, n3) = language_version in
+    let s =
   List.concat [
     [
       Printf.sprintf "/* Auto-generated by APBuf %d.%d.%d */\n" n1 n2 n3;
@@ -768,3 +851,5 @@ let generate (module_name : string) (package_name : string) (decls : declaration
       "}\n";
     ];
   ] |> String.concat ""
+    in
+    return s
