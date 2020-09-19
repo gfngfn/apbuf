@@ -26,6 +26,8 @@ rule token = parse
 | "|" { BAR(get_pos lexbuf) }
 | "{" { BRECORD(get_pos lexbuf) }
 | "}" { ERECORD(get_pos lexbuf) }
+| "[" { LBRACKET(get_pos lexbuf) }
+| "]" { RBRACKET(get_pos lexbuf) }
 | "(" { LPAREN(get_pos lexbuf) }
 | ")" { RPAREN(get_pos lexbuf) }
 | ":" { COLON(get_pos lexbuf) }

@@ -3,7 +3,7 @@
 %}
 
 %token EOI
-%token<Range.t> DEFEQ EQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
+%token<Range.t> DEFEQ EQ BAR BRECORD ERECORD  LPAREN RPAREN LBRACKET RBRACKET COLON COMMA
 %token<Range.t> META_OUTPUT META_LANGUAGE_VERSION META_EXTERNAL
 %token<Range.t * Types.parsed_variable> VARIABLE
 %token<Range.t * string> LOWER
@@ -45,6 +45,15 @@ value:
     let (rng, s) = tok in
     (rng, VString(s))
   }
+| tokL=LBRACKET; rmvs=values; tokR=RBRACKET {
+    let rng = Range.unite tokL tokR in
+    (rng, VList(rmvs))
+  }
+;
+values:
+|                               { [] }
+| rmv=value                     { [ rmv ] }
+| rmv=value; COMMA; rmvs=values { rmv :: rmvs }
 ;
 msgdecl:
 | name=msgname; params=params; DEFEQ; msg=msg {
