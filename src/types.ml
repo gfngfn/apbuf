@@ -536,6 +536,10 @@ let built_in_declarations : parsed_declarations =
   ]
 
 
+let get_value ((_, dict)) key =
+  dict |> Dict.find_opt key
+
+
 let get_mandatory_value ((rngd, dict) : dictionary) (key : string) : (meta_value ranged, error) result =
   let open ResultMonad in
   match dict |> Dict.find_opt key with
@@ -556,17 +560,23 @@ let get_mandatory_string (rdict : dictionary) (key : string) : (string, error) r
   validate_string_value rmv
 
 
-let get_mandatory_list validatef (rdict : dictionary) (key : string) =
+let get_list validatef (rdict : dictionary) (key : string) default =
   let open ResultMonad in
-  get_mandatory_value rdict key >>= fun (rng, mv) ->
-  match mv with
-  | VList(rmvs) ->
-      rmvs |> List.fold_left (fun res rmv ->
-        res >>= fun acc ->
-        validatef rmv >>= fun v ->
-        return (Alist.extend acc v)
-      ) (return Alist.empty) >>= fun acc ->
-      return (acc |> Alist.to_list)
+  match get_value rdict key with
+  | None ->
+      return default
 
-  | _ ->
-      error (NotAListValue(rng))
+  | Some((rng, mv)) ->
+      begin
+        match mv with
+        | VList(rmvs) ->
+            rmvs |> List.fold_left (fun res rmv ->
+              res >>= fun acc ->
+              validatef rmv >>= fun v ->
+              return (Alist.extend acc v)
+            ) (return Alist.empty) >>= fun acc ->
+          return (acc |> Alist.to_list)
+
+        | _ ->
+            error (NotAListValue(rng))
+      end

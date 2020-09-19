@@ -44,7 +44,7 @@ let generate_elm (dir_in : string) (rdict : dictionary) (decls : declarations) :
   let open ResultMonad in
   get_dir_out dir_in rdict >>= fun dir_out ->
   get_mandatory_string rdict "module" >>= fun module_name ->
-  get_mandatory_list validate_string_value rdict "imports" >>= fun imports ->
+  get_list validate_string_value rdict "imports" [] >>= fun imports ->
   GenElm.generate module_name imports decls >>= fun s ->
   let path_out = Filename.concat dir_out (module_name ^ ".elm") in
   Format.printf "writing output on '%s' ...\n" path_out;

@@ -1036,7 +1036,6 @@ let generate (module_name : string) (imports : string list) (decls : declaration
         Printf.sprintf "module %s exposing (..)\n" module_name;
         "import Json.Decode\n";
         "import Json.Encode\n";
-        "\n";
       ];
       (imports |> List.map (fun s -> Printf.sprintf "import %s\n" s));
       [
