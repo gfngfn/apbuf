@@ -60,7 +60,8 @@ let generate_scala (dir_in : string) (rdict : dictionary) (decls : declarations)
   get_dir_out dir_in rdict >>= fun dir_out ->
   get_mandatory_string rdict "package" >>= fun package_name ->
   get_mandatory_string rdict "object" >>= fun object_name ->
-  GenScala.generate object_name package_name decls >>= fun s ->
+  get_list validate_string_value rdict "imports" [] >>= fun imports ->
+  GenScala.generate object_name package_name imports decls >>= fun s ->
   let path_out = Filename.concat dir_out (object_name ^ ".scala") in
   Format.printf "writing output on '%s' ...\n" path_out;
   let fout = open_out path_out in

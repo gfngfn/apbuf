@@ -643,7 +643,7 @@ let encoder_of_variant (tyid : Output.type_identifier) (otyparams : Output.type_
   Output.make_variant_writes tyid otyparams ctors
 
 
-let generate (module_name : string) (package_name : string) (decls : declarations) =
+let generate (module_name : string) (package_name : string) (imports : string list) (decls : declarations) =
   let open ResultMonad in
   DeclMap.fold (fun name def res ->
     res >>= fun acc ->
@@ -812,6 +812,9 @@ let generate (module_name : string) (package_name : string) (decls : declaration
         "import play.api.libs.json.Reads._\n";
         "import play.api.libs.json.Writes._\n";
         "import play.api.libs.functional.syntax._\n";
+      ];
+      (imports |> List.map (fun s -> Printf.sprintf "import %s\n" s));
+      [
         "\n";
         Printf.sprintf "object %s {\n" module_name;
         "  def boolReads() = BooleanReads\n";     (* TODO; make this less ad-hoc *)
