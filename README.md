@@ -151,6 +151,12 @@ fields ::=
 
 metaval ::=
   | stringlit
+  | '[' metavals ']'
+
+metavals ::=
+  | metaval ',' metavals
+  | metaval
+  | (empty)
 
 // a list of declarations
 decls ::=
@@ -162,6 +168,7 @@ decl ::=
   | binder ':=' msg
   | binder ':=' '{' record '}'
   | binder ':=' variant
+  | ident ':=' externals
 
 binder ::=
   | ident
@@ -194,6 +201,13 @@ variant ::=
 variantsub ::=
   | '|' ctor ':' msg variantsub
   | (empty)
+
+externals ::=
+  | external externals
+  | (empty)
+
+external ::=
+  | '@external' stringlit ':' dict
 ```
 
 
