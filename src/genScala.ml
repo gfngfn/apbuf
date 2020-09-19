@@ -785,7 +785,7 @@ let generate (module_name : string) (package_name : string) (decls : declaration
                       Output.define_method_by_text ovar_reads tyannot decoder_text
                     in
                     let odecl_encoder =
-                      let ovar_writes = Output.global_reads name in
+                      let ovar_writes = Output.global_writes name in
                       let tyannot = Output.writes_type otymsg in
                       Output.define_method_by_text ovar_writes tyannot encoder_text
                     in
