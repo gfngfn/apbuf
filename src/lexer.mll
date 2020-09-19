@@ -32,8 +32,9 @@ rule token = parse
 | "," { COMMA(get_pos lexbuf) }
 | ("@" (lower as s)) {
     match s with
-    | "output" -> META_OUTPUT(get_pos lexbuf)
-    | _        -> fail (UnknownMeta(s))
+    | "output"           -> META_OUTPUT(get_pos lexbuf)
+    | "language_version" -> META_LANGUAGE_VERSION(get_pos lexbuf)
+    | _                  -> fail (UnknownMeta(s))
   }
 | ("$" (lower as x)) { VARIABLE(get_pos lexbuf, x) }
 | "\"" { string (get_pos lexbuf) (Buffer.create 256) lexbuf }

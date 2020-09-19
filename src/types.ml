@@ -140,7 +140,8 @@ type parsed_dictionary =
   ((string ranged * meta_value ranged) list) ranged
 
 type meta_spec =
-  | MetaOutput of string ranged * parsed_dictionary
+  | MetaOutput          of string ranged * parsed_dictionary
+  | MetaLanguageVersion of string ranged
 
 module Dict = Map.Make(String)
 
@@ -194,7 +195,13 @@ type definition = {
 
 type declarations = definition DeclMap.t
 
+type version = int * int * int
+[@@deriving show { with_path = false; }]
+
 type error =
+  | NoLanguageVersionFound
+  | MalformedVersionString         of string
+  | IncompatibleVersion            of { providing : version; got : version }
   | LexingInvalidCharacter         of { character : char; range : Range.t; }
   | EndOfLineInsideStringLiteral   of { start : Range.t; }
   | UnknownMeta                    of string

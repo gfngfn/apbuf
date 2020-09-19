@@ -4,7 +4,7 @@
 
 %token EOI
 %token<Range.t> DEFEQ EQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
-%token<Range.t> META_OUTPUT
+%token<Range.t> META_OUTPUT META_LANGUAGE_VERSION
 %token<Range.t * Types.parsed_variable> VARIABLE
 %token<Range.t * string> LOWER
 %token<Range.t * string> UPPER
@@ -24,6 +24,7 @@ toplevel:
 ;
 meta:
 | META_OUTPUT; s=STRING; COLON; dict=dict { MetaOutput(s, dict) }
+| META_LANGUAGE_VERSION; s=STRING         { MetaLanguageVersion(s) }
 ;
 dict:
 | posL=BRECORD; fields=fields; posR=ERECORD {
