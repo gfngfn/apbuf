@@ -1,5 +1,5 @@
 
-let language_version = (0, 0, 1)
+let language_version = (0, 0, 2)
 
 
 module Name : sig
