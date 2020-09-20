@@ -113,7 +113,9 @@ module Output : sig
   val define_variant_case_class : type_identifier -> type_parameter list -> (typ option) VariantMap.t -> declaration
   val define_record_case_class : type_identifier -> type_parameter list -> typ RecordMap.t -> declaration
   val define_type_alias : type_identifier -> type_parameter list -> typ -> declaration
+  val define_type_by_text : type_identifier -> string -> declaration
   val define_method : identifier -> type_parameter list -> (identifier * typ) list -> typ -> tree -> declaration
+  val define_method_by_text : identifier -> typ -> string -> declaration
   val stringify_declaration : declaration -> string
 end = struct
 
@@ -267,12 +269,21 @@ end = struct
         type_params : type_parameter list;
         type_real   : typ
       }
+    | DefTypeByText of {
+        type_name : type_identifier;
+        text      : string;
+      }
     | DefMethod of {
         method_name : identifier;
         type_params : type_parameter list;
         params      : (identifier * typ) list;
         return_type : typ;
         body        : tree;
+      }
+    | DefMethodByText of {
+        method_name : identifier;
+        return_type : typ;
+        text        : string;
       }
 
 
@@ -300,6 +311,13 @@ end = struct
     }
 
 
+  let define_type_by_text tyid text =
+    DefTypeByText{
+      type_name = tyid;
+      text      = text;
+    }
+
+
   let define_method ident otyparams vtparams otyret otree =
     DefMethod{
       method_name = ident;
@@ -307,6 +325,14 @@ end = struct
       return_type = otyret;
       params      = vtparams;
       body        = otree;
+    }
+
+
+  let define_method_by_text ident otyret text =
+    DefMethodByText{
+      method_name = ident;
+      return_type = otyret;
+      text        = text;
     }
 
 
@@ -505,6 +531,12 @@ end = struct
         let sty = stringify_type oty in
         Printf.sprintf "type %s%s = %s\n" tynm paramseq sty
 
+    | DefTypeByText{
+        type_name = TypeIdentifier(tynm);
+        text      = text;
+      } ->
+        Printf.sprintf "type %s = %s\n" tynm text
+
     | DefMethod{
         method_name = Var(varnm);
         type_params = otyparams;
@@ -527,6 +559,14 @@ end = struct
         let paramseq = String.concat ", " sparams in
         let sbody = stringify_tree otree in
         Printf.sprintf "def %s%s(%s): %s = { %s }\n" varnm typaramseq paramseq styret sbody
+
+    | DefMethodByText{
+        method_name = Var(varnm);
+        return_type = otyret;
+        text        = text;
+      } ->
+        let styret = stringify_type otyret in
+        Printf.sprintf "def %s(): %s = %s\n" varnm styret text
 
 end
 
@@ -603,168 +643,216 @@ let encoder_of_variant (tyid : Output.type_identifier) (otyparams : Output.type_
   Output.make_variant_writes tyid otyparams ctors
 
 
-let generate (module_name : string) (package_name : string) (decls : declarations) =
-  let odecls : Output.declaration list =
-    DeclMap.fold (fun name def acc ->
-      match def.def_main with
-      | BuiltIn(_builtin) ->
-          acc  (* TEMPORARY; TODO *)
+let generate (module_name : string) (package_name : string) (imports : string list) (decls : declarations) =
+  let open ResultMonad in
+  DeclMap.fold (fun name def res ->
+    res >>= fun acc ->
+    match def.def_main with
+    | BuiltIn(_builtin) ->
+        return acc  (* TEMPORARY; TODO *)
 
-      | GivenNormal(msg) ->
-          let otyname = Output.type_identifier name in
-          let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
-          let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
-          let odecl_type : Output.declaration =
-            let oty = generate_message_type msg in
-            Output.define_type_alias otyname otyparams oty
+    | GivenNormal(msg) ->
+        let otyname = Output.type_identifier name in
+        let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+        let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
+        let odecl_type : Output.declaration =
+          let oty = generate_message_type msg in
+          Output.define_type_alias otyname otyparams oty
+        in
+        let odecl_reads : Output.declaration =
+          let ovar_reads = Output.global_reads name in
+          let ovtparams =
+            def.def_params |> List.map (fun (_, x) ->
+              let otyparam = Output.type_parameter x in
+              (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
+            )
           in
-          let odecl_reads : Output.declaration =
-            let ovar_reads = Output.global_reads name in
-            let ovtparams =
-              def.def_params |> List.map (fun (_, x) ->
-                let otyparam = Output.type_parameter x in
-                (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
-              )
-            in
-            let otyret = Output.reads_type otymsg in
-            let otree_decoder = generate_message_decoder msg in
-            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
+          let otyret = Output.reads_type otymsg in
+          let otree_decoder = generate_message_decoder msg in
+          Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
+        in
+        let odecl_writes : Output.declaration =
+          let ovar_writes = Output.global_writes name in
+          let ovtparams =
+            def.def_params |> List.map (fun (_, x) ->
+              let otyparam = Output.type_parameter x in
+              (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
+            )
           in
-          let odecl_writes : Output.declaration =
-            let ovar_writes = Output.global_writes name in
-            let ovtparams =
-              def.def_params |> List.map (fun (_, x) ->
-                let otyparam = Output.type_parameter x in
-                (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
-              )
-            in
-            let otree_encoder = generate_message_encoder msg in
-            let otyret = Output.writes_type otymsg in
-            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
-          in
-          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
+          let otree_encoder = generate_message_encoder msg in
+          let otyret = Output.writes_type otymsg in
+          Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
+        in
+        let acc = Alist.append acc [ odecl_type; odecl_reads; odecl_writes ] in
+        return acc
 
-      | GivenRecord(record) ->
-          let otyname = Output.type_identifier name in
-          let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
-          let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
-          let odecl_type : Output.declaration =
-            let fields = record |> RecordMap.map generate_message_type in
-            Output.define_record_case_class otyname otyparams fields
+    | GivenRecord(record) ->
+        let otyname = Output.type_identifier name in
+        let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+        let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
+        let odecl_type : Output.declaration =
+          let fields = record |> RecordMap.map generate_message_type in
+          Output.define_record_case_class otyname otyparams fields
+        in
+        let odecl_reads =
+          let otree_decoder = decoder_of_record otyname otyparams record in
+          let ovar_reads = Output.global_reads name in
+          let ovtparams =
+            def.def_params |> List.map (fun (_, x) ->
+              let otyparam = Output.type_parameter x in
+              (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
+            )
           in
-          let odecl_reads =
-            let otree_decoder = decoder_of_record otyname otyparams record in
-            let ovar_reads = Output.global_reads name in
-            let ovtparams =
-              def.def_params |> List.map (fun (_, x) ->
-                let otyparam = Output.type_parameter x in
-                (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
-              )
-            in
-            let otyret = Output.reads_type otymsg in
-            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
+          let otyret = Output.reads_type otymsg in
+          Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
+        in
+        let odecl_writes =
+          let otree_encoder = encoder_of_record otyname otyparams record in
+          let ovar_writes = Output.global_writes name in
+          let ovtparams =
+            def.def_params |> List.map (fun (_, x) ->
+              let otyparam = Output.type_parameter x in
+              (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
+            )
           in
-          let odecl_writes =
-            let otree_encoder = encoder_of_record otyname otyparams record in
-            let ovar_writes = Output.global_writes name in
-            let ovtparams =
-              def.def_params |> List.map (fun (_, x) ->
-                let otyparam = Output.type_parameter x in
-                (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
-              )
-            in
-            let otyret = Output.writes_type otymsg in
-            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
-          in
-          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
+          let otyret = Output.writes_type otymsg in
+          Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
+        in
+        let acc = Alist.append acc [ odecl_type; odecl_reads; odecl_writes ] in
+        return acc
 
-      | GivenVariant(variant) ->
-          let otyname = Output.type_identifier name in
-          let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
-          let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
-          let odecl_type : Output.declaration =
-            let ctors = variant |> VariantMap.map (Option.map generate_message_type) in
-            Output.define_variant_case_class otyname otyparams ctors
+    | GivenVariant(variant) ->
+        let otyname = Output.type_identifier name in
+        let otyparams = def.def_params |> List.map (fun (_, x) -> Output.type_parameter x) in
+        let otymsg = Output.type_name otyname (otyparams |> List.map Output.type_variable) in
+        let odecl_type : Output.declaration =
+          let ctors = variant |> VariantMap.map (Option.map generate_message_type) in
+          Output.define_variant_case_class otyname otyparams ctors
+        in
+        let odecl_reads : Output.declaration =
+          let otree_decoder = decoder_of_variant otyname variant in
+          let ovar_reads = Output.global_reads name in
+          let ovtparams =
+            def.def_params |> List.map (fun (_, x) ->
+              let otyparam = Output.type_parameter x in
+              (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
+            )
           in
-          let odecl_reads : Output.declaration =
-            let otree_decoder = decoder_of_variant otyname variant in
-            let ovar_reads = Output.global_reads name in
-            let ovtparams =
-              def.def_params |> List.map (fun (_, x) ->
-                let otyparam = Output.type_parameter x in
-                (Output.local_for_parameter x, Output.reads_type (Output.type_variable otyparam))
-              )
-            in
-            let otyret = Output.reads_type otymsg in
-            Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
+          let otyret = Output.reads_type otymsg in
+          Output.define_method ovar_reads otyparams ovtparams otyret otree_decoder
+        in
+        let odecl_writes : Output.declaration =
+          let otree_encoder = encoder_of_variant otyname otyparams variant in
+          let ovar_writes = Output.global_writes name in
+          let ovtparams =
+            def.def_params |> List.map (fun (_, x) ->
+              let otyparam = Output.type_parameter x in
+              (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
+            )
           in
-          let odecl_writes : Output.declaration =
-            let otree_encoder = encoder_of_variant otyname otyparams variant in
-            let ovar_writes = Output.global_writes name in
-            let ovtparams =
-              def.def_params |> List.map (fun (_, x) ->
-                let otyparam = Output.type_parameter x in
-                (Output.local_for_parameter x, Output.writes_type (Output.type_variable otyparam))
-              )
-            in
-            let otyret = Output.writes_type otymsg in
-            Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
-          in
-          Alist.append acc [ odecl_type; odecl_reads; odecl_writes ]
+          let otyret = Output.writes_type otymsg in
+          Output.define_method ovar_writes otyparams ovtparams otyret otree_encoder
+        in
+        let acc = Alist.append acc [ odecl_type; odecl_reads; odecl_writes ] in
+        return acc
 
-    ) decls Alist.empty |> Alist.to_list
-  in
+    | GivenExternal(extern) ->
+        begin
+          match extern |> ExternalMap.find_opt "scala" with
+          | None ->
+              error (NoExternal{ format = "scala"; name = name })
+
+          | Some(dict) ->
+              begin
+                match def.def_params with
+                | _ :: _ ->
+                    error NoParameterAllowedForExternal
+
+                | [] ->
+                    get_mandatory_string dict "type" >>= fun type_text ->
+                    get_mandatory_string dict "decoder" >>= fun decoder_text ->
+                    get_mandatory_string dict "encoder" >>= fun encoder_text ->
+                    let otyname = Output.type_identifier name in
+                    let odecl_type =
+                      Output.define_type_by_text otyname type_text
+                    in
+                    let otymsg =
+                      Output.type_name otyname []
+                    in
+                    let odecl_decoder =
+                      let ovar_reads = Output.global_reads name in
+                      let tyannot = Output.reads_type otymsg in
+                      Output.define_method_by_text ovar_reads tyannot decoder_text
+                    in
+                    let odecl_encoder =
+                      let ovar_writes = Output.global_writes name in
+                      let tyannot = Output.writes_type otymsg in
+                      Output.define_method_by_text ovar_writes tyannot encoder_text
+                    in
+                    let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
+                    return acc
+              end
+        end
+
+  ) decls (return Alist.empty) >>= fun acc ->
+  let odecls = acc |> Alist.to_list in
   let sdecls =
     odecls |> List.map (fun odecl ->
       "  " ^ Output.stringify_declaration odecl ^ "\n"
     )
   in
   let (n1, n2, n3) = language_version in
-  List.concat [
-    [
-      Printf.sprintf "/* Auto-generated by APBuf %d.%d.%d */\n" n1 n2 n3;
-      Printf.sprintf "package %s\n" package_name;
-      "\n";
-      "import play.api.libs.json._\n";
-      "import play.api.libs.json.Reads._\n";
-      "import play.api.libs.json.Writes._\n";
-      "import play.api.libs.functional.syntax._\n";
-      "\n";
-      Printf.sprintf "object %s {\n" module_name;
-      "  def boolReads() = BooleanReads\n";     (* TODO; make this less ad-hoc *)
-      "  def boolWrites() = BooleanWrites\n";   (* TODO; make this less ad-hoc *)
-      "  def intReads() = IntReads\n";          (* TODO; make this less ad-hoc *)
-      "  def intWrites() = IntWrites\n";        (* TODO; make this less ad-hoc *)
-      "  def stringReads() = StringReads\n";    (* TODO; make this less ad-hoc *)
-      "  def stringWrites() = StringWrites\n";  (* TODO; make this less ad-hoc *)
-      "  def listReads[A](r: Reads[A]): Reads[List[A]] = Reads.list(r)\n";
-      "  def listWrites[A](w: Writes[A]): Writes[List[A]] = Writes.list(w)\n";
-      "  def optionReads[A](r: Reads[A]): Reads[Option[A]] =\n";
-      Printf.sprintf
-      "    (JsPath \\ \"%s\").read[String](StringReads).flatMap { (label: String) =>\n"
-      CommonConstant.label_field;
-      "      label match {\n";
-      "        case \"None\" => Reads.pure(None)\n";
-      Printf.sprintf
-      "        case \"Some\" => (JsPath \\ \"%s\").read[A](r).flatMap { (x) => Reads.pure(Some(x)) }\n"
-      CommonConstant.arg_field;
-      "      }\n";
-      "    }\n";
-      "  def optionWrites[A](w: Writes[A]): Writes[Option[A]] =\n";
-      "    Writes.apply { (x: Option[A]) =>\n";
-      "      x match {\n";
-      Printf.sprintf
-      "        case None => Json.obj(\"%s\" -> JsString(\"None\"))\n"
-      CommonConstant.label_field;
-      Printf.sprintf
-      "        case Some(arg) => Json.obj(\"%s\" -> JsString(\"Some\"), \"%s\" -> Json.toJson(arg)(w))\n"
-      CommonConstant.label_field CommonConstant.arg_field;
-      "      }\n";
-      "    }\n";
-      "\n";
-    ];
-    sdecls;
-    [
-      "}\n";
-    ];
-  ] |> String.concat ""
+  let s =
+    List.concat [
+      [
+        Printf.sprintf "/* Auto-generated by APBuf %d.%d.%d */\n" n1 n2 n3;
+        Printf.sprintf "package %s\n" package_name;
+        "\n";
+        "import play.api.libs.json._\n";
+        "import play.api.libs.json.Reads._\n";
+        "import play.api.libs.json.Writes._\n";
+        "import play.api.libs.functional.syntax._\n";
+      ];
+      (imports |> List.map (fun s -> Printf.sprintf "import %s\n" s));
+      [
+        "\n";
+        Printf.sprintf "object %s {\n" module_name;
+        "  def boolReads() = BooleanReads\n";     (* TODO; make this less ad-hoc *)
+        "  def boolWrites() = BooleanWrites\n";   (* TODO; make this less ad-hoc *)
+        "  def intReads() = IntReads\n";          (* TODO; make this less ad-hoc *)
+        "  def intWrites() = IntWrites\n";        (* TODO; make this less ad-hoc *)
+        "  def stringReads() = StringReads\n";    (* TODO; make this less ad-hoc *)
+        "  def stringWrites() = StringWrites\n";  (* TODO; make this less ad-hoc *)
+        "  def listReads[A](r: Reads[A]): Reads[List[A]] = Reads.list(r)\n";
+        "  def listWrites[A](w: Writes[A]): Writes[List[A]] = Writes.list(w)\n";
+        "  def optionReads[A](r: Reads[A]): Reads[Option[A]] =\n";
+        Printf.sprintf
+        "    (JsPath \\ \"%s\").read[String](StringReads).flatMap { (label: String) =>\n"
+        CommonConstant.label_field;
+        "      label match {\n";
+        "        case \"None\" => Reads.pure(None)\n";
+        Printf.sprintf
+        "        case \"Some\" => (JsPath \\ \"%s\").read[A](r).flatMap { (x) => Reads.pure(Some(x)) }\n"
+        CommonConstant.arg_field;
+        "      }\n";
+        "    }\n";
+        "  def optionWrites[A](w: Writes[A]): Writes[Option[A]] =\n";
+        "    Writes.apply { (x: Option[A]) =>\n";
+        "      x match {\n";
+        Printf.sprintf
+        "        case None => Json.obj(\"%s\" -> JsString(\"None\"))\n"
+        CommonConstant.label_field;
+        Printf.sprintf
+        "        case Some(arg) => Json.obj(\"%s\" -> JsString(\"Some\"), \"%s\" -> Json.toJson(arg)(w))\n"
+        CommonConstant.label_field CommonConstant.arg_field;
+        "      }\n";
+        "    }\n";
+        "\n";
+      ];
+      sdecls;
+      [
+        "}\n";
+      ];
+    ] |> String.concat ""
+  in
+  return s

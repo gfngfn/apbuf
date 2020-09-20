@@ -21,40 +21,10 @@ let pp decls s =
     | GivenNormal(msg) -> Format.printf "%a%a@ :=@ @[%a@],@ " Name.pp name pp_params params pp_message msg
     | GivenVariant(v)  -> Format.printf "%a%a@ :=@ @[%a@],@ " Name.pp name pp_params params (pp_variant_map pp_message) v
     | GivenRecord(r)   -> Format.printf "%a%a@ :=@ @[%a@],@ " Name.pp name pp_params params (pp_record_map pp_message) r
+    | GivenExternal(_) -> Format.printf "%a%a@ :=@ (external),@ " Name.pp name pp_params params
   );
   Format.printf "@]@,";
   Format.printf "OUTPUT:@ @[%s@]" s
-
-
-let validate_dictionary ((rngd, pfields) : parsed_dictionary) : (dictionary, error) result =
-  let open ResultMonad in
-  pfields |> List.fold_left (fun res ((_, k), rv) ->
-    res >>= fun dict ->
-    if dict |> Dict.mem k then
-      error (KeySpecifiedMoreThanOnce{ range = rngd; key = k; })
-    else
-      return (dict |> Dict.add k rv)
-  ) (return Dict.empty) >>= fun dict ->
-  return (rngd, dict)
-
-
-let get_mandatory_value ((rngd, dict) : dictionary) key : (meta_value ranged, error) result =
-  let open ResultMonad in
-  match dict |> Dict.find_opt key with
-  | None     -> error (MandatoryKeyNotFound{ range = rngd; key = key; })
-  | Some(rv) -> return rv
-
-
-let validate_string_value (_rng, mv) : (string, error) result =
-  let open ResultMonad in
-  match mv with
-  | VString(s) -> return s
-
-
-let get_mandatory_string rdict key =
-  let open ResultMonad in
-  get_mandatory_value rdict key >>= fun rmv ->
-  validate_string_value rmv
 
 
 let get_dir_out (dir_in : string) (rdict : dictionary) : (string, error) result =
@@ -74,7 +44,8 @@ let generate_elm (dir_in : string) (rdict : dictionary) (decls : declarations) :
   let open ResultMonad in
   get_dir_out dir_in rdict >>= fun dir_out ->
   get_mandatory_string rdict "module" >>= fun module_name ->
-  let s = GenElm.generate module_name decls in
+  get_list validate_string_value rdict "imports" [] >>= fun imports ->
+  GenElm.generate module_name imports decls >>= fun s ->
   let path_out = Filename.concat dir_out (module_name ^ ".elm") in
   Format.printf "writing output on '%s' ...\n" path_out;
   let fout = open_out path_out in
@@ -89,7 +60,8 @@ let generate_scala (dir_in : string) (rdict : dictionary) (decls : declarations)
   get_dir_out dir_in rdict >>= fun dir_out ->
   get_mandatory_string rdict "package" >>= fun package_name ->
   get_mandatory_string rdict "object" >>= fun object_name ->
-  let s = GenScala.generate object_name package_name decls in
+  get_list validate_string_value rdict "imports" [] >>= fun imports ->
+  GenScala.generate object_name package_name imports decls >>= fun s ->
   let path_out = Filename.concat dir_out (object_name ^ ".scala") in
   Format.printf "writing output on '%s' ...\n" path_out;
   let fout = open_out path_out in
@@ -131,12 +103,12 @@ let validate_meta dir_in (metas : meta_spec list) : ((declarations -> (unit, err
     prev >>= fun (version_found, kacc) ->
     match meta with
     | MetaOutput((_, "elm"), pdict) ->
-        validate_dictionary pdict >>= fun rdict ->
+        normalize_dictionary pdict >>= fun rdict ->
         let k = generate_elm dir_in rdict in
         return (version_found, Alist.extend kacc k)
 
     | MetaOutput((_, "scala"), pdict) ->
-        validate_dictionary pdict >>= fun rdict ->
+        normalize_dictionary pdict >>= fun rdict ->
         let k = generate_scala dir_in rdict in
         return (version_found, Alist.extend kacc k)
 

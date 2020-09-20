@@ -26,6 +26,8 @@ rule token = parse
 | "|" { BAR(get_pos lexbuf) }
 | "{" { BRECORD(get_pos lexbuf) }
 | "}" { ERECORD(get_pos lexbuf) }
+| "[" { LBRACKET(get_pos lexbuf) }
+| "]" { RBRACKET(get_pos lexbuf) }
 | "(" { LPAREN(get_pos lexbuf) }
 | ")" { RPAREN(get_pos lexbuf) }
 | ":" { COLON(get_pos lexbuf) }
@@ -34,10 +36,12 @@ rule token = parse
     match s with
     | "output"           -> META_OUTPUT(get_pos lexbuf)
     | "language_version" -> META_LANGUAGE_VERSION(get_pos lexbuf)
+    | "external"         -> META_EXTERNAL(get_pos lexbuf)
     | _                  -> fail (UnknownMeta(s))
   }
 | ("$" (lower as x)) { VARIABLE(get_pos lexbuf, x) }
 | "\"" { string (get_pos lexbuf) (Buffer.create 256) lexbuf }
+| "/*" { comment (get_pos lexbuf) lexbuf; token lexbuf }
 | lower { LOWER(get_pos lexbuf, Lexing.lexeme lexbuf) }
 | upper { UPPER(get_pos lexbuf, Lexing.lexeme lexbuf) }
 | eof { EOI }
@@ -60,3 +64,8 @@ and string start buf = parse
 | (eof | '\r' | '\n') {
     fail (EndOfLineInsideStringLiteral{ start = start; })
   }
+
+and comment start = parse
+| "*/" { () }
+| eof  { fail (EndOfLineInsideComment{ start = start; }) }
+| _    { comment start lexbuf }

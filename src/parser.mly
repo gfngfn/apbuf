@@ -3,8 +3,8 @@
 %}
 
 %token EOI
-%token<Range.t> DEFEQ EQ BAR BRECORD ERECORD LPAREN RPAREN COLON COMMA
-%token<Range.t> META_OUTPUT META_LANGUAGE_VERSION
+%token<Range.t> DEFEQ EQ BAR BRECORD ERECORD  LPAREN RPAREN LBRACKET RBRACKET COLON COMMA
+%token<Range.t> META_OUTPUT META_LANGUAGE_VERSION META_EXTERNAL
 %token<Range.t * Types.parsed_variable> VARIABLE
 %token<Range.t * string> LOWER
 %token<Range.t * string> UPPER
@@ -45,6 +45,15 @@ value:
     let (rng, s) = tok in
     (rng, VString(s))
   }
+| tokL=LBRACKET; rmvs=values; tokR=RBRACKET {
+    let rng = Range.unite tokL tokR in
+    (rng, VList(rmvs))
+  }
+;
+values:
+|                               { [] }
+| rmv=value                     { [ rmv ] }
+| rmv=value; COMMA; rmvs=values { rmv :: rmvs }
 ;
 msgdecl:
 | name=msgname; params=params; DEFEQ; msg=msg {
@@ -56,6 +65,12 @@ msgdecl:
 | name=msgname; params=params; DEFEQ; BRECORD; rcd=record; ERECORD {
     (name, { pdef_params = params; pdef_main = PGivenRecord(rcd) })
   }
+| name=msgname; params=params; DEFEQ; externals=list(extern) {
+    (name, { pdef_params = params; pdef_main = PGivenExternal(externals) })
+  }
+;
+extern:
+  META_EXTERNAL; s=STRING; COLON; dict=dict { (s, dict) }
 ;
 msgname:
 | name=LOWER { name }
