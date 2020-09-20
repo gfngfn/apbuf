@@ -8,7 +8,7 @@ all: build
 .PHONY: build
 build: src/*
 	rm -f ./apbuf
-	dune build src/apbuf.exe
+	dune build -p apbuf
 	cp ./_build/default/src/apbuf.exe ./apbuf
 
 .PHONY: install
