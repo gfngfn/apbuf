@@ -12,6 +12,7 @@ In exchange for its clean representation, APBuf at least currently does not purs
 * Currently supported target languages:
   - Elm
   - Scala
+  - [Sesterl](https://github.com/gfngfn/Sesterl)
 
 
 ## How to install
