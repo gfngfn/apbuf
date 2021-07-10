@@ -410,30 +410,36 @@ end = struct
         }
 
     | BList(_) ->
-        let ovar_param = Var("x") in
+        let ovar_param = Var("enc") in
+        let ovar = Var("v") in
         let typaram = TypeParameter("$a") in
+        let body =
+          abstraction ovar
+            (application (Var("Json.Encode.list"))
+              [ general_application (identifier ovar_param) (identifier ovar) ])
+        in
         DefVal{
           val_name    = global_encoder Name.list;
           universal   = [ typaram ];
           parameters  = [ (ovar_param, enc (!$ typaram)) ];
           return_type = enc (TypeName(type_identifier Name.list, [!$ typaram]));
-          body        = application (Var("Json.Encode.list")) [ identifier ovar_param ];
+          body        = body;
         }
 
     | BOption(_) ->
-        let ovar_param = Var("x") in
-        let ovar_toenc = Var("opt") in
-        let ovar_toencsub = Var("sub") in
+        let ovar_param = Var("enc") in
+        let ovar = Var("v") in
+        let ovar_sub = Var("sub") in
         let typaram = TypeParameter("$a") in
         let body =
-          abstraction ovar_toenc
+          abstraction ovar
             (Case{
-              subject  = Identifier(ovar_toenc);
+              subject  = Identifier(ovar);
               branches = [
                 (ConstructorPattern("Nothing", None),
                    encoded_none);
-                (ConstructorPattern("Just", Some(IdentifierPattern(ovar_toencsub))),
-                   encoded_some (general_application (Identifier(ovar_param)) (Identifier(ovar_toencsub))));
+                (ConstructorPattern("Just", Some(IdentifierPattern(ovar_sub))),
+                   encoded_some (general_application (Identifier(ovar_param)) (Identifier(ovar_sub))));
               ];
             })
         in
