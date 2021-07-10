@@ -227,12 +227,19 @@ end = struct
           (stringify_type ty2)
 
     | RecordType(tyrcd) ->
-        let sr =
-          tyrcd |> List.map (fun (key, ty) ->
-            Format.sprintf "%s : %s" (Constant.key key) (stringify_type ty)
-          ) |> String.concat ", "
-        in
-        Format.sprintf "{ %s }" sr
+        begin
+          match tyrcd with
+          | [] ->
+              "unit"
+
+          | _ :: _ ->
+              let sr =
+                tyrcd |> List.map (fun (key, ty) ->
+                  Format.sprintf "%s : %s" (Constant.key key) (stringify_type ty)
+                ) |> String.concat ", "
+              in
+              Format.sprintf "{ %s }" sr
+        end
 
 
   let stringify_declaration (odecl : declaration) : string =
