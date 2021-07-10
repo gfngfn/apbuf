@@ -153,6 +153,17 @@ module Make(Constant : CONSTANT) = struct
     }
 
 
+  (*  Receives map `{Ctor_1 ↦ Dec_1, …, Ctor_n ↦ Dec_n}` and returns an AST for:
+
+      ```
+      field "_label" string >>= fun temp ->
+      case temp of
+      | "Ctor_1" -> Dec_1
+      | …
+      | "Ctor_n" -> Dec_n
+      | other    -> fail other
+      ```
+  *)
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
       decode_field_access_raw CommonConstant.label_field (Identifier(Var(Constant.fun_decode_string)))
@@ -201,7 +212,7 @@ module Make(Constant : CONSTANT) = struct
 
 
   let encode_variant (jctor : string) (argopt : tree option) : tree =
-    let otree_label = general_application (Identifier(Var(Constant.fun_encode_string))) (string_literal jctor) in
+    let otree_label = application (Var(Constant.fun_encode_string)) [ string_literal jctor; ] in
     let otree_label_keyval = tuple [ string_literal CommonConstant.label_field; otree_label ] in
     let entries =
       match argopt with
@@ -211,6 +222,30 @@ module Make(Constant : CONSTANT) = struct
     encode_record (list entries)
 
 
+  (*  Receives `{Ctor_1 ↦ EncOpt_1, …, Ctor_n ↦ EncOpt_n}` and returns an AST for:
+
+      ```
+      fun temp ->
+         case temp of
+         | Branch_1
+         | …
+         | Branch_n
+      ```
+
+      where each `Branch_i` is
+
+      ```
+      Ctor_i sub -> object{ "_label": "Ctor_i", "_arg": Enc_i sub }
+      ```
+
+      if `EncOpt_i == Some Enc_i`, or
+
+      ```
+      Ctor_i -> object{ "_label": "Ctor_i" }
+      ```
+
+      if `EncOpt_i == None`.
+  *)
   let encode_branching (variant : (tree option) VariantMap.t) : tree =
     let ovar_toenc = Var("temp") in
     let branches =
