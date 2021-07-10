@@ -334,10 +334,10 @@ module Make(Constant : CONSTANT) = struct
 
   type declaration =
     | DefVal of {
-        val_name   : identifier;
-        typ        : typ;
-        parameters : identifier list;
-        body       : tree;
+        val_name    : identifier;
+        parameters  : (identifier * typ) list;
+        return_type : typ;
+        body        : tree;
       }
     | DefValByText of {
         val_name : identifier;
@@ -360,12 +360,12 @@ module Make(Constant : CONSTANT) = struct
       }
 
 
-  let define_value ovar typ oparams otree =
+  let define_value ovar oparams tyret otree =
     DefVal{
-      val_name   = ovar;
-      typ        = typ;
-      parameters = oparams;
-      body       = otree;
+      val_name    = ovar;
+      parameters  = oparams;
+      return_type = tyret;
+      body        = otree;
     }
 
 

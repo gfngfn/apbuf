@@ -127,7 +127,7 @@ module Output : sig
   val encoder_type : typ -> typ
   type declaration
   val stringify_declaration : declaration -> string
-  val define_value : identifier -> typ -> identifier list -> tree -> declaration
+  val define_value : identifier -> (identifier * typ) list -> typ -> tree -> declaration
   val define_value_by_text : identifier -> typ -> string -> declaration
   val built_in_decoder : built_in -> declaration
   val built_in_encoder : built_in -> declaration
@@ -248,16 +248,20 @@ end = struct
   let stringify_declaration (odecl : declaration) : string =
     match odecl with
     | DefVal{
-        val_name   = Var(s);
-        typ        = typ;
-        parameters = oparams;
-        body       = otree;
+        val_name    = Var(s);
+        parameters  = oparams;
+        return_type = tyret;
+        body        = otree;
       } ->
+        let typ =
+          let tydoms = oparams |> List.map (fun (_, ty) -> ty) in
+          function_type tydoms tyret
+        in
         Format.sprintf "%s : %s\n%s%s = %s"
           s
           (stringify_type typ)
           s
-          (String.concat "" (oparams |> List.map (fun (Var(s)) -> " " ^ s)))
+          (String.concat "" (oparams |> List.map (fun (Var(s), _) -> " " ^ s)))
           (stringify_tree 1 otree)
 
     | DefValByText{
@@ -317,35 +321,35 @@ end = struct
     match builtin with
     | BBool ->
         DefVal{
-          val_name   = global_decoder Name.bool;
-          typ        = dec (base Name.bool);
-          parameters = [];
-          body       = Identifier(Var("Json.Decode.bool"));
+          val_name    = global_decoder Name.bool;
+          parameters  = [];
+          return_type = dec (base Name.bool);
+          body        = Identifier(Var("Json.Decode.bool"));
         }
 
     | BInt ->
         DefVal{
-          val_name   = global_decoder Name.int;
-          typ        = dec (base Name.int);
-          parameters = [];
-          body       = Identifier(Var("Json.Decode.int"));
+          val_name    = global_decoder Name.int;
+          parameters  = [];
+          return_type = dec (base Name.int);
+          body        = Identifier(Var("Json.Decode.int"));
         }
 
     | BString ->
         DefVal{
-          val_name   = global_decoder Name.string;
-          typ        = dec (base Name.string);
-          parameters = [];
-          body       = Identifier(Var("Json.Decode.string"));
+          val_name    = global_decoder Name.string;
+          parameters  = [];
+          return_type = dec (base Name.string);
+          body        = Identifier(Var("Json.Decode.string"));
         }
 
     | BList(_) ->
         let typaram = TypeParameter("a") in
         DefVal{
-          val_name   = global_decoder Name.list;
-          typ        = FuncType([dec (!$ typaram)], dec (TypeName(type_identifier Name.list, [!$ typaram])));
-          parameters = [];
-          body       = Identifier(Var("Json.Decode.list"));
+          val_name    = global_decoder Name.list;
+          parameters  = [];
+          return_type = FuncType([ dec (!$ typaram) ], dec (TypeName(type_identifier Name.list, [!$ typaram])));
+          body        = Identifier(Var("Json.Decode.list"));
         }
 
     | BOption(_) ->
@@ -357,10 +361,10 @@ end = struct
         in
         let typaram = TypeParameter("a") in
         DefVal{
-          val_name   = global_decoder Name.option;
-          typ        = FuncType([dec (!$ typaram)], dec (TypeName(type_identifier Name.option, [!$ typaram])));
-          parameters = [ovar];
-          body       = branching omap;
+          val_name    = global_decoder Name.option;
+          parameters  = [ (ovar, dec (!$ typaram)) ];
+          return_type = dec (TypeName(type_identifier Name.option, [!$ typaram]));
+          body        = branching omap;
         }
 
 
@@ -370,35 +374,35 @@ end = struct
     match builtin with
     | BBool ->
         DefVal{
-          val_name   = global_encoder Name.bool;
-          typ        = enc (base Name.bool);
-          parameters = [];
-          body       = Identifier(Var("Json.Encode.bool"));
+          val_name    = global_encoder Name.bool;
+          parameters  = [];
+          return_type = enc (base Name.bool);
+          body        = Identifier(Var("Json.Encode.bool"));
         }
 
     | BInt ->
         DefVal{
-          val_name   = global_encoder Name.int;
-          typ        = enc (base Name.int);
-          parameters = [];
-          body       = Identifier(Var("Json.Encode.int"));
+          val_name    = global_encoder Name.int;
+          parameters  = [];
+          return_type = enc (base Name.int);
+          body        = Identifier(Var("Json.Encode.int"));
         }
 
     | BString ->
         DefVal{
-          val_name   = global_encoder Name.string;
-          typ        = enc (base Name.string);
-          parameters = [];
-          body       = Identifier(Var("Json.Encode.string"));
+          val_name    = global_encoder Name.string;
+          parameters  = [];
+          return_type = enc (base Name.string);
+          body        = Identifier(Var("Json.Encode.string"));
         }
 
     | BList(_) ->
         let typaram = TypeParameter("a") in
         DefVal{
-          val_name   = global_encoder Name.list;
-          typ        = FuncType([enc (!$ typaram)], enc (TypeName(type_identifier Name.list, [!$ typaram])));
-          parameters = [];
-          body       = Identifier(Var("Json.Encode.list"));
+          val_name    = global_encoder Name.list;
+          parameters  = [];
+          return_type = FuncType([ enc (!$ typaram) ], enc (TypeName(type_identifier Name.list, [!$ typaram])));
+          body        = Identifier(Var("Json.Encode.list"));
         }
 
     | BOption(_) ->
@@ -419,10 +423,10 @@ end = struct
             })
         in
         DefVal{
-          val_name   = global_encoder Name.option;
-          typ        = FuncType([enc (!$ typaram)], enc (TypeName(type_identifier Name.option, [!$ typaram])));
-          parameters = [ ovar_param ];
-          body       = body;
+          val_name    = global_encoder Name.option;
+          parameters  = [ (ovar_param, enc (!$ typaram)) ];
+          return_type = enc (TypeName(type_identifier Name.option, [!$ typaram]));
+          body        = body;
         }
 
 end
@@ -499,24 +503,20 @@ let generate_record_type (record : record) : Output.typ =
   Output.record_type tyrcd
 
 
-let make_decoder_function_type (params : (Variable.t ranged) list) (ty : Output.typ) : Output.typ =
-  let tydoms =
-    params |> List.map (fun (_, x) ->
-      let typaram = Output.type_parameter x in
-      Output.decoder_type (Output.type_variable typaram)
-    )
-  in
-  Output.function_type tydoms (Output.decoder_type ty)
+let make_decoder_parameters (params : (Variable.t ranged) list) =
+  params |> List.map (fun (_, x) ->
+    let ovar = Output.local_for_parameter x in
+    let ty = Output.decoder_type (Output.type_variable (Output.type_parameter x)) in
+    (ovar, ty)
+  )
 
 
-let make_encoder_function_type (params : (Variable.t ranged) list) (ty : Output.typ) : Output.typ =
-  let tydoms =
-    params |> List.map (fun (_, x) ->
-      let typaram = Output.type_parameter x in
-      Output.encoder_type (Output.type_variable typaram)
-    )
-  in
-  Output.function_type tydoms (Output.encoder_type ty)
+let make_encoder_parameters (params : (Variable.t ranged) list) =
+  params |> List.map (fun (_, x) ->
+    let ovar = Output.local_for_parameter x in
+    let ty = Output.encoder_type (Output.type_variable (Output.type_parameter x)) in
+    (ovar, ty)
+  )
 
 
 let encoder_of_variable (x : Variable.t) : Output.tree =
@@ -577,7 +577,6 @@ let generate (module_name : string) (imports : string list) (decls : declaration
     res >>= fun acc ->
     let ovar_decoder = Output.global_decoder name in
     let ovar_encoder = Output.global_encoder name in
-    let oparams = def.def_params |> List.map (fun (_, x) -> Output.local_for_parameter x) in
     match def.def_main with
     | BuiltIn(builtin) ->
         let odecl_decoder = Output.built_in_decoder builtin in
@@ -596,14 +595,16 @@ let generate (module_name : string) (imports : string list) (decls : declaration
           Output.type_name otyname tyargs
         in
         let odecl_decoder =
-          let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
-          let otree = generate_message_decoder msg in
-          Output.define_value ovar_decoder tyannot oparams otree
+          let oparams = make_decoder_parameters def.def_params in
+          let tyret = Output.decoder_type tyaliasmsg in
+          let otree_decoder = generate_message_decoder msg in
+          Output.define_value ovar_decoder oparams tyret otree_decoder
         in
         let odecl_encoder =
-          let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
+          let oparams = make_encoder_parameters def.def_params in
+          let tyret = Output.encoder_type tyaliasmsg in
           let otree_encoder = generate_message_encoder msg in
-          Output.define_value ovar_encoder tyannot oparams otree_encoder
+          Output.define_value ovar_encoder oparams tyret otree_encoder
         in
         let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
         return acc
@@ -619,14 +620,16 @@ let generate (module_name : string) (imports : string list) (decls : declaration
           Output.type_name otyname tyargs
         in
         let odecl_decoder =
-          let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
-          let otree = decoder_of_record record in
-          Output.define_value ovar_decoder tyannot oparams otree
+          let oparams = make_decoder_parameters def.def_params in
+          let tyret = Output.decoder_type tyaliasmsg in
+          let otree_decoder = decoder_of_record record in
+          Output.define_value ovar_decoder oparams tyret otree_decoder
         in
         let odecl_encoder =
-          let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
+          let oparams = make_encoder_parameters def.def_params in
+          let tyret = Output.encoder_type tyaliasmsg in
           let otree_encoder = encoder_of_record record in
-          Output.define_value ovar_encoder tyannot oparams otree_encoder
+          Output.define_value ovar_encoder oparams tyret otree_encoder
         in
         let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
         return acc
@@ -652,14 +655,16 @@ let generate (module_name : string) (imports : string list) (decls : declaration
           Output.type_name otyname tyargs
         in
         let odecl_decoder =
-          let tyannot = make_decoder_function_type def.def_params tyaliasmsg in
-          let otree = decoder_of_variant variant in
-          Output.define_value ovar_decoder tyannot oparams otree
+          let oparams = make_decoder_parameters def.def_params in
+          let tyret = Output.decoder_type tyaliasmsg in
+          let otree_decoder = decoder_of_variant variant in
+          Output.define_value ovar_decoder oparams tyret otree_decoder
         in
         let odecl_encoder =
-          let tyannot = make_encoder_function_type def.def_params tyaliasmsg in
-          let otree = encoder_of_variant variant in
-          Output.define_value ovar_encoder tyannot oparams otree
+          let oparams = make_encoder_parameters def.def_params in
+          let tyret = Output.encoder_type tyaliasmsg in
+          let otree_encoder = encoder_of_variant variant in
+          Output.define_value ovar_encoder oparams tyret otree_encoder
         in
         let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
         return acc
@@ -688,11 +693,11 @@ let generate (module_name : string) (imports : string list) (decls : declaration
                       Output.type_name otyname []
                     in
                     let odecl_decoder =
-                      let tyannot = make_decoder_function_type [] tyaliasmsg in
+                      let tyannot = Output.decoder_type tyaliasmsg in
                       Output.define_value_by_text ovar_decoder tyannot decoder_text
                     in
                     let odecl_encoder =
-                      let tyannot = make_encoder_function_type [] tyaliasmsg in
+                      let tyannot = Output.encoder_type tyaliasmsg in
                       Output.define_value_by_text ovar_encoder tyannot encoder_text
                     in
                     let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
