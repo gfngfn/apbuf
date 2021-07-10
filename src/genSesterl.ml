@@ -359,11 +359,15 @@ end = struct
         }
 
     | BOption(_) ->
+        let otree_abs =
+          let ovar = Var("temp") in
+          abstraction ovar (general_application (Constructor("Some")) (identifier ovar))
+        in
         let ovar = Var("x") in
         let omap =
           VariantMap.empty
-            |> VariantMap.add Constructor.none (succeed (Constructor("Nothing")))
-            |> VariantMap.add Constructor.some (access_argument (map (Constructor("Just")) (Identifier(ovar))))
+            |> VariantMap.add Constructor.none (succeed (Constructor("None")))
+            |> VariantMap.add Constructor.some (access_argument (map otree_abs (Identifier(ovar))))
         in
         let typaram = TypeParameter("$a") in
         DefVal{
@@ -436,9 +440,9 @@ end = struct
             (Case{
               subject  = Identifier(ovar);
               branches = [
-                (ConstructorPattern("Nothing", None),
+                (ConstructorPattern("None", None),
                    encoded_none);
-                (ConstructorPattern("Just", Some(IdentifierPattern(ovar_sub))),
+                (ConstructorPattern("Some", Some(IdentifierPattern(ovar_sub))),
                    encoded_some (general_application (Identifier(ovar_param)) (Identifier(ovar_sub))));
               ];
             })
