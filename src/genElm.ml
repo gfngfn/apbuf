@@ -122,7 +122,7 @@ module Output : sig
   val type_name : type_identifier -> typ list -> typ
   val type_variable : type_parameter -> typ
   val record_type : (Key.t * typ) list -> typ
-  val function_type : typ -> typ -> typ
+  val function_type : typ list -> typ -> typ
   val decoder_type : typ -> typ
   val encoder_type : typ -> typ
   type declaration
@@ -230,9 +230,10 @@ end = struct
     | TypeVariable(TypeParameter(a)) ->
         a
 
-    | FuncType(ty1, ty2) ->
-        Format.sprintf "(%s -> %s)"
-          (stringify_type ty1)
+    | FuncType(tys1, ty2) ->
+        let sdom = tys1 |> List.map stringify_type |> List.map (fun s -> s ^ " -> ") |> String.concat "" in
+        Format.sprintf "(%s%s)"
+          sdom
           (stringify_type ty2)
 
     | RecordType(tyrcd) ->
@@ -342,7 +343,7 @@ end = struct
         let typaram = TypeParameter("a") in
         DefVal{
           val_name   = global_decoder Name.list;
-          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier Name.list, [!$ typaram])));
+          typ        = FuncType([dec (!$ typaram)], dec (TypeName(type_identifier Name.list, [!$ typaram])));
           parameters = [];
           body       = Identifier(Var("Json.Decode.list"));
         }
@@ -357,7 +358,7 @@ end = struct
         let typaram = TypeParameter("a") in
         DefVal{
           val_name   = global_decoder Name.option;
-          typ        = FuncType(dec (!$ typaram), dec (TypeName(type_identifier Name.option, [!$ typaram])));
+          typ        = FuncType([dec (!$ typaram)], dec (TypeName(type_identifier Name.option, [!$ typaram])));
           parameters = [ovar];
           body       = branching omap;
         }
@@ -395,7 +396,7 @@ end = struct
         let typaram = TypeParameter("a") in
         DefVal{
           val_name   = global_encoder Name.list;
-          typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier Name.list, [!$ typaram])));
+          typ        = FuncType([enc (!$ typaram)], enc (TypeName(type_identifier Name.list, [!$ typaram])));
           parameters = [];
           body       = Identifier(Var("Json.Encode.list"));
         }
@@ -419,7 +420,7 @@ end = struct
         in
         DefVal{
           val_name   = global_encoder Name.option;
-          typ        = FuncType(enc (!$ typaram), enc (TypeName(type_identifier Name.option, [!$ typaram])));
+          typ        = FuncType([enc (!$ typaram)], enc (TypeName(type_identifier Name.option, [!$ typaram])));
           parameters = [ ovar_param ];
           body       = body;
         }
@@ -499,17 +500,23 @@ let generate_record_type (record : record) : Output.typ =
 
 
 let make_decoder_function_type (params : (Variable.t ranged) list) (ty : Output.typ) : Output.typ =
-  List.fold_right (fun (_, x) ty ->
-    let typaram = Output.type_parameter x in
-    Output.function_type (Output.decoder_type (Output.type_variable typaram)) ty
-  ) params (Output.decoder_type ty)
+  let tydoms =
+    params |> List.map (fun (_, x) ->
+      let typaram = Output.type_parameter x in
+      Output.decoder_type (Output.type_variable typaram)
+    )
+  in
+  Output.function_type tydoms (Output.decoder_type ty)
 
 
 let make_encoder_function_type (params : (Variable.t ranged) list) (ty : Output.typ) : Output.typ =
-  List.fold_right (fun (_, x) ty ->
-    let typaram = Output.type_parameter x in
-    Output.function_type (Output.encoder_type (Output.type_variable typaram)) ty
-  ) params (Output.encoder_type ty)
+  let tydoms =
+    params |> List.map (fun (_, x) ->
+      let typaram = Output.type_parameter x in
+      Output.encoder_type (Output.type_variable typaram)
+    )
+  in
+  Output.function_type tydoms (Output.encoder_type ty)
 
 
 let encoder_of_variable (x : Variable.t) : Output.tree =

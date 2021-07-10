@@ -300,16 +300,16 @@ module Make(Constant : CONSTANT) = struct
   type typ =
     | TypeName     of type_identifier * typ list
     | TypeVariable of type_parameter
-    | FuncType     of typ * typ
+    | FuncType     of typ list * typ
     | RecordType   of (Key.t * typ) list
 
 
   let decoder_type ty =
-    TypeName(TypeIdentifier(Constant.type_decoder), [ty])
+    TypeName(TypeIdentifier(Constant.type_decoder), [ ty ])
 
 
   let encoder_type ty =
-    FuncType(ty, TypeName(TypeIdentifier(Constant.type_value), []))
+    FuncType([ ty ], TypeName(TypeIdentifier(Constant.type_value), []))
 
 
   let base s =
@@ -328,8 +328,8 @@ module Make(Constant : CONSTANT) = struct
     RecordType(tyrcd)
 
 
-  let function_type (ty1 : typ) (ty2 : typ) : typ =
-    FuncType(ty1, ty2)
+  let function_type (tys1 : typ list) (ty2 : typ) : typ =
+    FuncType(tys1, ty2)
 
 
   type declaration =
