@@ -3,6 +3,20 @@ open Types
 
 module Constant : GenMlScheme.CONSTANT = struct
 
+  let fun_decode_field    = "Json.Decode.field"
+  let fun_decode_and_then = "Json.Decode.andThen"
+  let fun_decode_map      = "Json.Decode.map"
+  let fun_decode_succeed  = "Json.Decode.succeed"
+  let fun_decode_fail     = "Json.Decode.fail"
+  let fun_decode_string   = "Json.Decode.string"
+
+  let fun_encode_object   = "Json.Encode.object"
+  let fun_encode_string   = "Json.Encode.string"
+
+  let type_decoder = "Json.Decode.Decoder"
+  let type_value   = "Json.Encode.Value"
+
+
   let global_decoder name =
     "decode" ^ (Name.to_upper_camel_case name)
 

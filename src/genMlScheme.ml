@@ -3,6 +3,19 @@ open Types
 
 
 module type CONSTANT = sig
+  val fun_decode_field    : string
+  val fun_decode_and_then : string
+  val fun_decode_map      : string
+  val fun_decode_succeed  : string
+  val fun_decode_fail     : string
+  val fun_decode_string   : string
+
+  val fun_encode_object : string
+  val fun_encode_string : string
+
+  val type_decoder : string
+  val type_value   : string
+
   val global_decoder : Name.t -> string
   val global_encoder : Name.t -> string
   val local_for_key : Key.t -> string
@@ -96,7 +109,7 @@ module Make(Constant : CONSTANT) = struct
 
   let decode_field_access_raw (skey : string) (otree : tree) : tree =
     Application{
-      applied   = Identifier(Var("Json.Decode.field"));
+      applied   = Identifier(Var(Constant.fun_decode_field));
       arguments = [ StringLiteral(skey); otree; ];
     }
 
@@ -107,42 +120,42 @@ module Make(Constant : CONSTANT) = struct
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
     Application{
-      applied   = Identifier(Var("Json.Decode.andThen"));
+      applied   = Identifier(Var(Constant.fun_decode_and_then));
       arguments = [ otree_cont; otree_dec; ];
     }
 
 
   let map (otree_map : tree) (otree_dec : tree) : tree =
     Application{
-      applied   = Identifier(Var("Json.Decode.map"));
+      applied   = Identifier(Var(Constant.fun_decode_map));
       arguments = [ otree_map; otree_dec; ];
     }
 
 
   let succeed (otree : tree) =
     Application{
-      applied   = Identifier(Var("Json.Decode.succeed"));
+      applied   = Identifier(Var(Constant.fun_decode_succeed));
       arguments = [ otree; ];
     }
 
 
   let encode_record (otree : tree) =
     Application{
-      applied   = Identifier(Var("Json.Encode.object"));
-      arguments = [ otree ];
+      applied   = Identifier(Var(Constant.fun_encode_object));
+      arguments = [ otree; ];
     }
 
 
   let access_argument (otree : tree) =
     Application{
-      applied = Identifier(Var("Json.Decode.field"));
+      applied   = Identifier(Var(Constant.fun_decode_field));
       arguments = [ StringLiteral(CommonConstant.arg_field); otree; ]
     }
 
 
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
-      decode_field_access_raw CommonConstant.label_field (Identifier(Var("Json.Decode.string")))
+      decode_field_access_raw CommonConstant.label_field (Identifier(Var(Constant.fun_decode_string)))
     in
     let otree_cont =
       let ovar_temp = Var("temp") in
@@ -155,7 +168,7 @@ module Make(Constant : CONSTANT) = struct
         let ovar_other = Var("other") in
         let otree_err =
           Application{
-            applied   = Identifier(Var("Json.Decode.fail"));
+            applied   = Identifier(Var(Constant.fun_decode_fail));
             arguments = [ Identifier(ovar_other) ];
           }
         in
@@ -188,7 +201,7 @@ module Make(Constant : CONSTANT) = struct
 
 
   let encode_variant (jctor : string) (argopt : tree option) : tree =
-    let otree_label = general_application (Identifier(Var("Json.Encode.string"))) (string_literal jctor) in
+    let otree_label = general_application (Identifier(Var(Constant.fun_encode_string))) (string_literal jctor) in
     let otree_label_keyval = tuple [ string_literal CommonConstant.label_field; otree_label ] in
     let entries =
       match argopt with
@@ -257,11 +270,11 @@ module Make(Constant : CONSTANT) = struct
 
 
   let decoder_type ty =
-    TypeName(TypeIdentifier("Json.Decode.Decoder"), [ty])
+    TypeName(TypeIdentifier(Constant.type_decoder), [ty])
 
 
   let encoder_type ty =
-    FuncType(ty, TypeName(TypeIdentifier("Json.Encode.Value"), []))
+    FuncType(ty, TypeName(TypeIdentifier(Constant.type_value), []))
 
 
   let base s =
