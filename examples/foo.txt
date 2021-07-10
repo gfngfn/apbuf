@@ -1,5 +1,10 @@
+@language_version "0.0.2"
 @output "elm": {
   dir    = "./gen/elm/src",
+  module = "Foo",
+}
+@output "sesterl": {
+  dir    = "./gen/sesterl/src",
   module = "Foo",
 }
 @output "scala": {

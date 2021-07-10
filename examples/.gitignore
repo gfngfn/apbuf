@@ -1,2 +1,5 @@
-gen/elm/
+gen/elm/src/
+gen/elm/elm-stuff/
 gen/play-scala-seed/
+gen/sesterl/src/
+gen/sesterl/_generated/
