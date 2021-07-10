@@ -416,7 +416,7 @@ end = struct
         let body =
           abstraction ovar
             (application (Var("Json.Encode.list"))
-              [ general_application (identifier ovar_param) (identifier ovar) ])
+              [ application (Var("Stdlib.List.map")) [ identifier ovar_param; identifier ovar; ] ])
         in
         DefVal{
           val_name    = global_encoder Name.list;
