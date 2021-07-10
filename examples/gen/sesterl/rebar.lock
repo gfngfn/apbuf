@@ -1,0 +1,16 @@
+{"1.2.0",
+[{<<"jsone">>,{pkg,<<"jsone">>,<<"1.5.7">>},1},
+ {<<"sesterl_json">>,
+  {git,"https://github.com/gfngfn/sesterl_json",
+       {ref,"48b4f9901c3783d8b6326785a99fc97550ed63db"}},
+  0},
+ {<<"sesterl_stdlib">>,
+  {git,"https://github.com/gfngfn/sesterl_stdlib",
+       {ref,"76d08158bc8e5108ed933d280c51dc37c7c08d2d"}},
+  1}]}.
+[
+{pkg_hash,[
+ {<<"jsone">>, <<"036EC290BF3B2B3348B2EEC199A0FCDA62CE296AB6B736A403A6A440C5203618">>}]},
+{pkg_hash_ext,[
+ {<<"jsone">>, <<"5F146CBF953469667EEE145FB066D6EE6B9B181BCFD547295317526E7464D732">>}]}
+].

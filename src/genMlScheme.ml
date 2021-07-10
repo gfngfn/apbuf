@@ -4,7 +4,7 @@ open Types
 
 module type CONSTANT = sig
   val fun_decode_field    : string
-  val fun_decode_and_then : string
+  val fun_decode_and_then : string * bool
   val fun_decode_map      : string
   val fun_decode_succeed  : string
   val fun_decode_fail     : string
@@ -119,9 +119,10 @@ module Make(Constant : CONSTANT) = struct
 
 
   let and_then (otree_cont : tree) (otree_dec : tree) : tree =
+    let (fname, rev) = Constant.fun_decode_and_then in
     Application{
-      applied   = Identifier(Var(Constant.fun_decode_and_then));
-      arguments = [ otree_cont; otree_dec; ];
+      applied   = Identifier(Var(fname));
+      arguments = if rev then [ otree_cont; otree_dec; ] else [ otree_dec; otree_cont; ];
     }
 
 
@@ -166,7 +167,7 @@ module Make(Constant : CONSTANT) = struct
   *)
   let branching (omap : tree VariantMap.t) =
     let otree_accesslabel =
-      decode_field_access_raw CommonConstant.label_field (Identifier(Var(Constant.fun_decode_string)))
+      decode_field_access_raw CommonConstant.label_field (application (Var(Constant.fun_decode_string)) [])
     in
     let otree_cont =
       let ovar_temp = Var("temp") in
@@ -335,6 +336,7 @@ module Make(Constant : CONSTANT) = struct
   type declaration =
     | DefVal of {
         val_name    : identifier;
+        universal   : type_parameter list;
         parameters  : (identifier * typ) list;
         return_type : typ;
         body        : tree;
@@ -360,9 +362,10 @@ module Make(Constant : CONSTANT) = struct
       }
 
 
-  let define_value ovar oparams tyret otree =
+  let define_value ovar otyparams oparams tyret otree =
     DefVal{
       val_name    = ovar;
+      universal   = otyparams;
       parameters  = oparams;
       return_type = tyret;
       body        = otree;

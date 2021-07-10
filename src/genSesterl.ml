@@ -4,33 +4,33 @@ open Types
 module Constant : GenMlScheme.CONSTANT = struct
 
   let fun_decode_field    = "Json.Decode.field"
-  let fun_decode_and_then = ("Json.Decode.andThen", true)
+  let fun_decode_and_then = ("Json.Decode.bind", false)
   let fun_decode_map      = "Json.Decode.map"
-  let fun_decode_succeed  = "Json.Decode.succeed"
+  let fun_decode_succeed  = "Json.Decode.pure"
   let fun_decode_fail     = "Json.Decode.fail"
   let fun_decode_string   = "Json.Decode.string"
 
-  let fun_encode_object   = "Json.Encode.object"
+  let fun_encode_object   = "Json.Encode.object_from_list"
   let fun_encode_string   = "Json.Encode.string"
 
-  let type_decoder = "Json.Decode.Decoder"
-  let type_value   = "Json.Encode.Value"
+  let type_decoder = "Json.Decode.t"
+  let type_value   = "Json.Encode.t"
 
 
   let global_decoder name =
-    "decode" ^ (Name.to_upper_camel_case name)
+    "decode_" ^ (Name.to_snake_case name)
 
 
   let global_encoder name =
-    "encode" ^ (Name.to_upper_camel_case name)
+    "encode_" ^ (Name.to_snake_case name)
 
 
   let local_for_key key =
-    "localKey" ^ (Key.to_upper_camel_case key)
+    "local_key_" ^ (Key.to_snake_case key)
 
 
   let local_for_parameter x =
-    "localParam" ^ (Variable.to_upper_camel_case x)
+    "local_param_" ^ (Variable.to_snake_case x)
 
 
   module ReservedWordSet = Set.Make(String)
@@ -38,19 +38,17 @@ module Constant : GenMlScheme.CONSTANT = struct
 
   let reserved_words =
     ReservedWordSet.of_list [
-      "type"; "alias"; "port";
-      "if"; "then"; "else";
+      "let"; "rec"; "and"; "in"; "fun";
+      "if"; "then"; "else"; "true"; "false";
+      "act"; "do"; "receive"; "end";
       "case"; "of";
-      "let"; "in";
-      "infix"; "left"; "right"; "non";
-      "module"; "import"; "exposing"; "as";
-      "effect"; "where"; "command"; "subscription";
+      "val"; "type"; "module"; "struct"; "signature"; "sig"; "with";
+      "external"; "include"; "import"; "freeze"; "pack"; "assert"; "open";
     ]
-      (* https://github.com/elm/compiler/blob/14af98cde81146abd5950be3d7ab0133e55898ef/compiler/src/Parse/Keyword.hs *)
 
 
   let key key =
-    let s = Key.to_lower_camel_case key in
+    let s = Key.to_snake_case key in
     if reserved_words |> ReservedWordSet.mem s then
       s ^ "_"
     else
@@ -64,11 +62,11 @@ module Constant : GenMlScheme.CONSTANT = struct
   let builtin_type_candidates =
     let ( ==> ) x y = (x, y) in
     [
-      Name.bool   ==> "Bool";
-      Name.int    ==> "Int";
-      Name.string ==> "String";
-      Name.list   ==> "List";
-      Name.option ==> "Maybe";
+      Name.bool   ==> "bool";
+      Name.int    ==> "int";
+      Name.string ==> "binary";
+      Name.list   ==> "list";
+      Name.option ==> "option";
     ]
 
 
@@ -79,11 +77,11 @@ module Constant : GenMlScheme.CONSTANT = struct
       )
     with
     | Some(s) -> s
-    | None    -> Name.to_upper_camel_case name
+    | None    -> Name.to_snake_case name
 
 
   let type_parameter x =
-    "ty" ^ (Variable.to_upper_camel_case x)
+    "$" ^ (Variable.to_snake_case x)
 
 end
 
@@ -149,32 +147,25 @@ end = struct
         begin
           match patopt with
           | None         -> sctor
-          | Some(patsub) -> Format.sprintf "(%s %s)" sctor (stringify_pattern patsub)
+          | Some(patsub) -> Format.sprintf "%s(%s)" sctor (stringify_pattern patsub)
         end
 
     | IdentifierPattern(Var(s)) ->
         s
 
 
-  let rec stringify_tree (indent : int) (otree : tree) : string =
+  let rec stringify_tree (otree : tree) : string =
     match otree with
     | Identifier(Var(s)) ->
         s
 
     | Application{ applied = applied; arguments = args; } ->
-        let s = stringify_tree indent applied in
-        begin
-          match args with
-          | [] ->
-              s
-
-          | _ :: _ ->
-              let sargs = args |> List.map (stringify_tree (indent + 1)) in
-              Format.sprintf "(%s %s)" s (String.concat " " sargs)
-        end
+        let s = stringify_tree applied in
+        let sargs = args |> List.map stringify_tree in
+        Format.sprintf "%s(%s)" s (String.concat ", " sargs)
 
     | Abstract{ variable = Var(s); body = body; } ->
-        Format.sprintf "(\\%s -> %s)" s (stringify_tree (indent + 1) body)
+        Format.sprintf "(fun(%s) -> %s end)" s (stringify_tree body)
 
     | StringLiteral(s) ->
         Format.sprintf "\"%s\"" s
@@ -183,17 +174,17 @@ end = struct
         ctor
 
     | Tuple(otrees) ->
-        let ss = otrees |> List.map (stringify_tree (indent + 1)) in
-        Format.sprintf "( %s )" (String.concat ", " ss)
+        let ss = otrees |> List.map stringify_tree in
+        Format.sprintf "{%s}" (String.concat ", " ss)
 
     | List(otrees) ->
-        let ss = otrees |> List.map (stringify_tree (indent + 1)) in
+        let ss = otrees |> List.map stringify_tree in
         Format.sprintf "[ %s ]" (String.concat ", " ss)
 
     | Record(orcd) ->
         let ss =
           RecordMap.fold (fun key otree acc ->
-            let s = Format.sprintf "%s = %s" (Constant.key key) (stringify_tree (indent + 1) otree) in
+            let s = Format.sprintf "%s = %s" (Constant.key key) (stringify_tree otree) in
             Alist.extend acc s
           ) orcd Alist.empty |> Alist.to_list
         in
@@ -201,17 +192,16 @@ end = struct
 
     | FieldAccess{ record = otree_record; key = key; } ->
         let skey = Constant.key key in
-        let s = stringify_tree indent otree_record in
+        let s = stringify_tree otree_record in
         Format.sprintf "%s.%s" s skey
 
     | Case{ subject = otree_subject; branches = branches } ->
-        let sindent = "\n" ^ String.make ((indent + 1) * 2) ' ' in
         let ss =
           branches |> List.map (fun (pat, otree) ->
-            Format.sprintf "%s%s -> %s" sindent (stringify_pattern pat) (stringify_tree (indent + 2) otree)
+            Format.sprintf " | %s -> %s" (stringify_pattern pat) (stringify_tree otree)
           )
         in
-        Format.sprintf "(case %s of %s)" (stringify_tree (indent + 1) otree_subject) (String.concat "" ss)
+        Format.sprintf "(case %s of %s end)" (stringify_tree otree_subject) (String.concat "" ss)
 
 
   let rec stringify_type (ty : typ) : string =
@@ -223,16 +213,16 @@ end = struct
               s
 
           | _ :: _ ->
-              let ss = tyargs |> List.map (fun ty -> " " ^ stringify_type ty) in
-              Format.sprintf "(%s%s)" s (String.concat "" ss)
+              let ss = tyargs |> List.map stringify_type in
+              Format.sprintf "%s<%s>" s (String.concat ", " ss)
         end
 
     | TypeVariable(TypeParameter(a)) ->
         a
 
     | FuncType(tys1, ty2) ->
-        let sdom = tys1 |> List.map stringify_type |> List.map (fun s -> s ^ " -> ") |> String.concat "" in
-        Format.sprintf "(%s%s)"
+        let sdom = tys1 |> List.map stringify_type |> String.concat ", " in
+        Format.sprintf "fun(%s) -> %s"
           sdom
           (stringify_type ty2)
 
@@ -249,30 +239,32 @@ end = struct
     match odecl with
     | DefVal{
         val_name    = Var(s);
+        universal   = otyparams;
         parameters  = oparams;
         return_type = tyret;
         body        = otree;
-      } ->
-        let typ =
-          let tydoms = oparams |> List.map (fun (_, ty) -> ty) in
-          function_type tydoms tyret
+    } ->
+        let styparam =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "<" ^ (String.concat ", " (otyparams |> List.map (fun (TypeParameter(s)) -> s))) ^ ">"
         in
-        Format.sprintf "%s : %s\n%s%s = %s"
+        let ss = oparams |> List.map (fun (Var(s), ty) -> s ^ " : " ^ (stringify_type ty)) in
+        Format.sprintf "%s%s(%s) : %s = %s"
           s
-          (stringify_type typ)
-          s
-          (String.concat "" (oparams |> List.map (fun (Var(s), _) -> " " ^ s)))
-          (stringify_tree 1 otree)
+          styparam
+          (String.concat ", " ss)
+          (stringify_type tyret)
+          (stringify_tree otree)
 
     | DefValByText{
         val_name = Var(s);
         typ      = typ;
         text     = text;
       } ->
-        Printf.sprintf "%s : %s\n%s = %s"
+        Printf.sprintf "%s() : %s = %s"
           s
           (stringify_type typ)
-          s
           text
 
     | DefTypeAlias{
@@ -280,9 +272,14 @@ end = struct
         parameters = otyparams;
         body       = ty;
       } ->
-        Format.sprintf "type alias %s%s = %s"
+        let sparam =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "<" ^ (String.concat ", " (otyparams |> List.map (fun (TypeParameter(a)) -> a))) ^ ">"
+        in
+        Format.sprintf "%s%s = %s"
           s
-          (String.concat "" (otyparams |> List.map (fun (TypeParameter(a)) -> " " ^ a)))
+          sparam
           (stringify_type ty)
 
     | DefDataType{
@@ -295,22 +292,26 @@ end = struct
             let sarg =
               match tyopt with
               | None     -> ""
-              | Some(ty) -> " "  ^ (stringify_type ty)
+              | Some(ty) -> "(" ^ (stringify_type ty) ^ ")"
             in
-            let sep = if index == 0 then "=" else "|" in
-            Format.sprintf "  %s %s%s" sep (Constant.constructor ctor) sarg
+            Format.sprintf " | %s%s" (Constant.constructor ctor) sarg
           )
         in
-        Format.sprintf "type %s%s\n%s"
+        let sparam =
+          match otyparams with
+          | []     -> ""
+          | _ :: _ -> "<" ^ (String.concat ", " (otyparams |> List.map (fun (TypeParameter(a)) -> a))) ^ ">"
+        in
+        Format.sprintf "%s%s = %s"
           s
-          (String.concat "" (otyparams |> List.map (fun (TypeParameter(a)) -> " " ^ a)))
-          (String.concat "\n" ss)
+          sparam
+          (String.concat "" ss)
 
     | DefTypeByText{
         type_name = TypeIdentifier(s);
         text      = text;
       } ->
-        Printf.sprintf "type alias %s = %s"
+        Printf.sprintf "%s = %s"
           s
           text
 
@@ -325,7 +326,7 @@ end = struct
           universal   = [];
           parameters  = [];
           return_type = dec (base Name.bool);
-          body        = Identifier(Var("Json.Decode.bool"));
+          body        = application (Var("Json.Decode.bool")) [];
         }
 
     | BInt ->
@@ -334,7 +335,7 @@ end = struct
           universal   = [];
           parameters  = [];
           return_type = dec (base Name.int);
-          body        = Identifier(Var("Json.Decode.int"));
+          body        = application (Var("Json.Decode.int")) [];
         }
 
     | BString ->
@@ -343,17 +344,18 @@ end = struct
           universal   = [];
           parameters  = [];
           return_type = dec (base Name.string);
-          body        = Identifier(Var("Json.Decode.string"));
+          body        = application (Var("Json.Decode.string")) [];
         }
 
     | BList(_) ->
-        let typaram = TypeParameter("a") in
+        let ovar = Var("x") in
+        let typaram = TypeParameter("$a") in
         DefVal{
           val_name    = global_decoder Name.list;
           universal   = [ typaram ];
-          parameters  = [];
-          return_type = FuncType([ dec (!$ typaram) ], dec (TypeName(type_identifier Name.list, [!$ typaram])));
-          body        = Identifier(Var("Json.Decode.list"));
+          parameters  = [ (ovar, dec (!$ typaram)) ];
+          return_type = dec (TypeName(type_identifier Name.list, [!$ typaram]));
+          body        = application (Var("Json.Decode.list")) [ Identifier(ovar) ];
         }
 
     | BOption(_) ->
@@ -363,7 +365,7 @@ end = struct
             |> VariantMap.add Constructor.none (succeed (Constructor("Nothing")))
             |> VariantMap.add Constructor.some (access_argument (map (Constructor("Just")) (Identifier(ovar))))
         in
-        let typaram = TypeParameter("a") in
+        let typaram = TypeParameter("$a") in
         DefVal{
           val_name    = global_decoder Name.option;
           universal   = [ typaram ];
@@ -383,7 +385,7 @@ end = struct
           universal   = [];
           parameters  = [];
           return_type = enc (base Name.bool);
-          body        = Identifier(Var("Json.Encode.bool"));
+          body        = application (Var("Json.Encode.bool")) [];
         }
 
     | BInt ->
@@ -392,7 +394,7 @@ end = struct
           universal   = [];
           parameters  = [];
           return_type = enc (base Name.int);
-          body        = Identifier(Var("Json.Encode.int"));
+          body        = application (Var("Json.Encode.int")) [];
         }
 
     | BString ->
@@ -401,24 +403,25 @@ end = struct
           universal   = [];
           parameters  = [];
           return_type = enc (base Name.string);
-          body        = Identifier(Var("Json.Encode.string"));
+          body        = application (Var("Json.Encode.string")) [];
         }
 
     | BList(_) ->
-        let typaram = TypeParameter("a") in
+        let ovar = Var("x") in
+        let typaram = TypeParameter("$a") in
         DefVal{
           val_name    = global_encoder Name.list;
           universal   = [ typaram ];
-          parameters  = [];
-          return_type = FuncType([ enc (!$ typaram) ], enc (TypeName(type_identifier Name.list, [!$ typaram])));
-          body        = Identifier(Var("Json.Encode.list"));
+          parameters  = [ (ovar, enc (!$ typaram)) ];
+          return_type = enc (TypeName(type_identifier Name.list, [!$ typaram]));
+          body        = application (Var("Json.Encode.list")) [ Identifier(ovar) ];
         }
 
     | BOption(_) ->
         let ovar_param = Var("x") in
         let ovar_toenc = Var("opt") in
         let ovar_toencsub = Var("sub") in
-        let typaram = TypeParameter("a") in
+        let typaram = TypeParameter("$a") in
         let body =
           abstraction ovar_toenc
             (Case{
@@ -481,7 +484,17 @@ and decoder_of_variant (variant : (message option) VariantMap.t) : Output.tree =
 
       | Some(argmsg) ->
           let otree_decarg = generate_message_decoder argmsg in
-          Output.access_argument (Output.map (Output.constructor ctor) otree_decarg)
+          let otree_abs =
+            let ovar =
+              match Variable.from_snake_case "temp" with
+              | Some(s) -> Output.local_for_parameter s
+              | None    -> assert false
+                  (* TODO: make less ad-hoc *)
+            in
+            let open Output in
+            abstraction ovar (general_application (constructor ctor) (identifier ovar))
+          in
+          Output.access_argument (Output.map otree_abs otree_decarg)
     )
   in
   Output.branching ocases
@@ -577,22 +590,20 @@ and generate_message_encoder (msg : message) : Output.tree =
   match msg with
   | Variable((_, x))      -> encoder_of_variable x
   | Name((_, name), args) -> encoder_of_name name args
-(*
-  | Record(rcd)           -> encoder_of_record rcd
-*)
+
 
 let generate (module_name : string) (imports : string list) (decls : declarations) : (string, error) result =
   let open ResultMonad in
   DeclMap.fold (fun name def res ->
-    res >>= fun acc ->
+    res >>= fun (tyacc, valacc) ->
     let ovar_decoder = Output.global_decoder name in
     let ovar_encoder = Output.global_encoder name in
     match def.def_main with
     | BuiltIn(builtin) ->
         let odecl_decoder = Output.built_in_decoder builtin in
         let odecl_encoder = Output.built_in_encoder builtin in
-        let acc = Alist.append acc [ odecl_decoder; odecl_encoder; ] in
-        return acc
+        let valacc = Alist.append valacc [ odecl_decoder; odecl_encoder; ] in
+        return (tyacc, valacc)
 
     | GivenNormal(msg) ->
         let otyname = Output.type_identifier name in
@@ -616,8 +627,9 @@ let generate (module_name : string) (imports : string list) (decls : declaration
           let otree_encoder = generate_message_encoder msg in
           Output.define_value ovar_encoder otyparams oparams tyret otree_encoder
         in
-        let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-        return acc
+        let tyacc = Alist.extend tyacc odecl_type in
+        let valacc = Alist.append valacc [ odecl_decoder; odecl_encoder; ] in
+        return (tyacc, valacc)
 
     | GivenRecord(record) ->
         let otyname = Output.type_identifier name in
@@ -641,8 +653,9 @@ let generate (module_name : string) (imports : string list) (decls : declaration
           let otree_encoder = encoder_of_record record in
           Output.define_value ovar_encoder otyparams oparams tyret otree_encoder
         in
-        let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-        return acc
+        let tyacc = Alist.extend tyacc odecl_type in
+        let valacc = Alist.append valacc [ odecl_decoder; odecl_encoder; ] in
+        return (tyacc, valacc)
 
     | GivenVariant(variant) ->
         let otyname = Output.type_identifier name in
@@ -676,14 +689,15 @@ let generate (module_name : string) (imports : string list) (decls : declaration
           let otree_encoder = encoder_of_variant variant in
           Output.define_value ovar_encoder otyparams oparams tyret otree_encoder
         in
-        let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-        return acc
+        let tyacc = Alist.extend tyacc odecl_type in
+        let valacc = Alist.append valacc [ odecl_decoder; odecl_encoder; ] in
+        return (tyacc, valacc)
 
     | GivenExternal(extern) ->
         begin
-          match extern |> ExternalMap.find_opt "elm" with
+          match extern |> ExternalMap.find_opt "sesterl" with
           | None ->
-              error (NoExternal{ format = "elm"; name = name })
+              error (NoExternal{ format = "sesterl"; name = name })
 
           | Some(dict) ->
               begin
@@ -710,32 +724,40 @@ let generate (module_name : string) (imports : string list) (decls : declaration
                       let tyannot = Output.encoder_type tyaliasmsg in
                       Output.define_value_by_text ovar_encoder tyannot encoder_text
                     in
-                    let acc = Alist.append acc [ odecl_type; odecl_decoder; odecl_encoder; ] in
-                    return acc
+                    let tyacc = Alist.extend tyacc odecl_type in
+                    let valacc = Alist.append valacc [ odecl_decoder; odecl_encoder; ] in
+                    return (tyacc, valacc)
               end
         end
 
-  ) decls (return Alist.empty) >>= fun acc ->
-  let odecls = acc |> Alist.to_list in
-  let sdecls =
-    odecls |> List.map (fun odecl ->
-      Output.stringify_declaration odecl ^ "\n\n"
+  ) decls (return (Alist.empty, Alist.empty)) >>= fun (tyacc, valacc) ->
+  let stydecls =
+    tyacc |> Alist.to_list |> List.mapi (fun i odecl ->
+      let token = if i == 0 then "type" else "and" in
+      Printf.sprintf "  %s %s\n\n" token (Output.stringify_declaration odecl)
+    )
+  in
+  let svaldecls =
+    valacc |> Alist.to_list |> List.mapi (fun i odecl ->
+      let token = if i == 0 then "val rec" else "and" in
+      Printf.sprintf "  %s %s\n\n" token (Output.stringify_declaration odecl)
     )
   in
   let (n1, n2, n3) = language_version in
   let s =
     List.concat [
       [
-        Printf.sprintf "-- Auto-generated by APBuf %d.%d.%d\n" n1 n2 n3;
-        Printf.sprintf "module %s exposing (..)\n" module_name;
-        "import Json.Decode\n";
-        "import Json.Encode\n";
+        Printf.sprintf "/* Auto-generated by APBuf %d.%d.%d */\n" n1 n2 n3;
       ];
       (imports |> List.map (fun s -> Printf.sprintf "import %s\n" s));
       [
-        "\n";
+        Printf.sprintf "module %s = struct\n" module_name;
       ];
-      sdecls;
+      stydecls;
+      svaldecls;
+      [
+        "end\n";
+      ];
     ] |> String.concat ""
   in
   return s

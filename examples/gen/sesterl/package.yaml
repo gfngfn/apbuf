@@ -1,0 +1,18 @@
+package: "apbuf_test"
+
+source_directories:
+  - "./src"
+
+main_module: "Foo"
+
+dependencies:
+  - name: "sesterl_json"
+    source:
+      type: "git"
+      repository: "https://github.com/gfngfn/sesterl_json"
+      spec:
+        type: "branch"
+        value: "master"
+
+erlang:
+  output_directory: "./_generated"

@@ -39,4 +39,5 @@ test-bar: install
 test-foo: install
 	apbuf examples/foo.txt
 	cd examples/gen/elm && elm make src/$(TEST_FOO_ELM_MODULE).elm && cd ../../..
+	cd examples/gen/sesterl && sesterl config ./ && rebar3 sesterl compile && cd ../../..
 	cd examples/gen/play-scala-seed && sbt compile && cd ../../..

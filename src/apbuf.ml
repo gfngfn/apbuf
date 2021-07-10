@@ -55,6 +55,21 @@ let generate_elm (dir_in : string) (rdict : dictionary) (decls : declarations) :
   return ()
 
 
+let generate_sesterl (dir_in : string) (rdict : dictionary) (decls : declarations) : (unit, error) result =
+  let open ResultMonad in
+  get_dir_out dir_in rdict >>= fun dir_out ->
+  get_mandatory_string rdict "module" >>= fun module_name ->
+  get_list validate_string_value rdict "imports" [] >>= fun imports ->
+  GenSesterl.generate module_name imports decls >>= fun s ->
+  let path_out = Filename.concat dir_out (module_name ^ ".sest") in
+  Format.printf "writing output on '%s' ...\n" path_out;
+  let fout = open_out path_out in
+  output_string fout s;
+  close_out fout;
+  print_endline "done.";
+  return ()
+
+
 let generate_scala (dir_in : string) (rdict : dictionary) (decls : declarations) : (unit, error) result =
   let open ResultMonad in
   get_dir_out dir_in rdict >>= fun dir_out ->
@@ -105,6 +120,11 @@ let validate_meta dir_in (metas : meta_spec list) : ((declarations -> (unit, err
     | MetaOutput((_, "elm"), pdict) ->
         normalize_dictionary pdict >>= fun rdict ->
         let k = generate_elm dir_in rdict in
+        return (version_found, Alist.extend kacc k)
+
+    | MetaOutput((_, "sesterl"), pdict) ->
+        normalize_dictionary pdict >>= fun rdict ->
+        let k = generate_sesterl dir_in rdict in
         return (version_found, Alist.extend kacc k)
 
     | MetaOutput((_, "scala"), pdict) ->
