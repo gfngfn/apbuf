@@ -380,41 +380,44 @@ end = struct
     let ( !$ ) tp = TypeVariable(tp) in
     match builtin with
     | BBool ->
+        let ovar = Var("v") in
         DefVal{
           val_name    = global_encoder Name.bool;
           universal   = [];
           parameters  = [];
           return_type = enc (base Name.bool);
-          body        = application (Var("Json.Encode.bool")) [];
+          body        = abstraction ovar (application (Var("Json.Encode.bool")) [ identifier ovar ]);
         }
 
     | BInt ->
+        let ovar = Var("v") in
         DefVal{
           val_name    = global_encoder Name.int;
           universal   = [];
           parameters  = [];
           return_type = enc (base Name.int);
-          body        = application (Var("Json.Encode.int")) [];
+          body        = abstraction ovar (application (Var("Json.Encode.int")) [ identifier ovar ]);
         }
 
     | BString ->
+        let ovar = Var("v") in
         DefVal{
           val_name    = global_encoder Name.string;
           universal   = [];
           parameters  = [];
           return_type = enc (base Name.string);
-          body        = application (Var("Json.Encode.string")) [];
+          body        = abstraction ovar (application (Var("Json.Encode.string")) [ identifier ovar ]);
         }
 
     | BList(_) ->
-        let ovar = Var("x") in
+        let ovar_param = Var("x") in
         let typaram = TypeParameter("$a") in
         DefVal{
           val_name    = global_encoder Name.list;
           universal   = [ typaram ];
-          parameters  = [ (ovar, enc (!$ typaram)) ];
+          parameters  = [ (ovar_param, enc (!$ typaram)) ];
           return_type = enc (TypeName(type_identifier Name.list, [!$ typaram]));
-          body        = application (Var("Json.Encode.list")) [ Identifier(ovar) ];
+          body        = application (Var("Json.Encode.list")) [ identifier ovar_param ];
         }
 
     | BOption(_) ->

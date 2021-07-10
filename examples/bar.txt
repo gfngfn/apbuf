@@ -3,6 +3,10 @@
   dir    = "./gen/elm/src",
   module = "Bar",
 }
+@output "sesterl": {
+  dir    = "./gen/sesterl/src",
+  module = "Bar",
+}
 @output "scala": {
   dir     = "./gen/play-scala-seed/app/assets/apbuf",
   package = "apbufgen",
