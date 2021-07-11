@@ -1,7 +1,7 @@
 (lang dune 2.5)
 (using menhir 2.1)
 (name apbuf)
-(version 0.0.2)
+(version 0.0.3)
 
 (generate_opam_files true)
 
